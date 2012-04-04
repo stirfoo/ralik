@@ -792,9 +792,9 @@ checked."
     (seq @name-set)))
 
 (defmacro defgrammar
-  "Expand to the function name that expects a single argument: a string of the
-text to parse. doc-string is not optional. The third argument must be a
-possibly empty vector of key val pairs:
+  "Expand to the function `name' that expects or or two arguments: a string of
+the text to parse and an optional start rule. doc-string is not optional. The
+third argument must be a possibly empty vector of key val pairs:
 
 .--------------+-------------------------------------------------------------.
 |     key      |                          val                                |
@@ -973,15 +973,3 @@ point number of the time in milliseconds or nil if f returns nil."
            (when result#
              (recur (inc i#) (+ time-sum# (- (.getTime (java.util.Date.))
                                              start-time#)))))))))
-
-;; TODO:
-;; * buffered input from a file
-;; * optimize redundant *cur-pos* saves and restores
-;; * more atomic parsers for `standard' tokens
-;; * More tests
-;; * with-trace -- fix trace output width
-;; * spep -- `window' the line of text if it's >= 80 cols
-;; * g_ -- Should separator be a rest arg? If the separator is built up with
-;;         multiple parsers, the user must put them in a (g ...). A rest arg
-;;         would eliminate this."
-;; * defgrammer -- enable the other keys when inherit? is supplied
