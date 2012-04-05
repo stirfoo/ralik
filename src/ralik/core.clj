@@ -704,6 +704,8 @@ this accumulated info. Return the result of the rule."
   "defgrammar helper"
   [fn-name & body]
   `(do
+     ;; (when (> *trace-depth* 200)
+     ;;     (throw (Exception. "parser might stuck be in a loop")))
      (set! *trace-depth* (+ *trace-depth* *trace-indent*))
      (printf "%s%s: %s\n"
 	     (apply str (repeat *trace-depth* " "))
@@ -718,7 +720,7 @@ this accumulated info. Return the result of the rule."
      (flush)
      (let [result# (do ~@body)]
        (let [sresult# (if-not result#
-			"FAIL"
+			"nil"
 			(str result#))]
 	 (println (str (apply str (repeat *trace-depth* " "))
 		       (name '~fn-name) " =>")
@@ -729,6 +731,7 @@ this accumulated info. Return the result of the rule."
 				     3 (count (name '~fn-name)))))))
          (flush))
        (set! *trace-depth* (- *trace-depth* *trace-indent*))
+       
        result#)))
 
 (defn- memoize-rule
@@ -935,7 +938,8 @@ Example:
 		 (print-profile-info))
 	       result#)
              (when ~print-err?
-               (spep (offset->line-number *err-pos* *text-to-parse*)))))))))
+               (spep (assoc (offset->line-number *err-pos* *text-to-parse*)
+                       :hint *err-msg*)))))))))
 
 ;; testing foo
 
