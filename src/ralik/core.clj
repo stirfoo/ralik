@@ -581,6 +581,19 @@ match wins so kwords should be ordered accordingly; foobar before foo:
   `(g (g| ~@(map #(if (seq? %) % (name %)) kwords))
       (-skip (g! :kw-term))))
 
+;; XXX: initial version
+(defmacro >_
+  "Collect the results of a g_ parser and apply them to the function f.
+If form matches at least once, return the result of f, else return nil.
+The collection will be a vector where each matched form is appended."
+  [form separator f]
+  `(let [col# (atom [])]
+     (g_ (awhen (g ~form)
+           #(swap! col# conj %))
+         ~separator)
+     (when-not (empty? @col#)
+       (apply ~f @col#))))
+
 (defn wsp-skipper
   "Simple non-memoized skipper to ignore all subsequent [ \\r\\n\\t\\f].
 Always returns a non-nil value"

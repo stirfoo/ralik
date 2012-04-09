@@ -85,11 +85,14 @@
        ))
   ;; foo or foo.bar.baaz
   (qualified-name
-   (let [ids (atom [])]
-     (g (g_ (awhen (identifier)
-              #(swap! ids conj %))
-            \.)
-        (symbol (apply str (map str (interpose \. @ids)))))))
+   (>_ (identifier) \.
+       #(symbol (apply str (interpose \. %&)))))
+  ;; (qualified-name
+  ;;  (let [ids (atom [])]
+  ;;    (g (g_ (awhen (identifier)
+  ;;             #(swap! ids conj %))
+  ;;           \.)
+  ;;       (symbol (apply str (interpose \. @ids))))))
   ;; 
   (assignment-operator
    (bop->node
@@ -107,44 +110,29 @@
           @o1))))
   ;; a || b -- left-associative
   (conditional-or-expression
-   (let [es (atom [])]
-     (g (g_ (awhen (conditional-and-expression)
-              #(swap! es conj %))
-            "||")
-        (reduce #(list (bop->node "||") %1 %2)
-                @es))))
+   (>_ (conditional-and-expression) "||"
+       #(reduce (fn [x y] (list (bop->node "||") x y))
+                %&)))
   ;; a && b -- left-associative
   (conditional-and-expression
-   (let [es (atom [])]
-     (g (g_ (awhen (inclusive-or-expression)
-              #(swap! es conj %))
-            "&&")
-        (reduce #(list (bop->node "&&") %1 %2)
-                @es))))
+   (>_ (inclusive-or-expression) "&&"
+       #(reduce (fn [x y] (list (bop->node "&&") x y))
+                %&)))
   ;; x | y -- left-associative
   (inclusive-or-expression
-   (let [es (atom [])]
-     (g (g_ (awhen (exclusive-or-expression)
-              #(swap! es conj %))
-            \|)
-        (reduce #(list (bop->node "|") %1 %2)
-                @es))))
+   (>_ (exclusive-or-expression) \|
+       #(reduce (fn [x y] (list (bop->node "|") x y))
+                %&)))
   ;; x ^ y -- left-associative
   (exclusive-or-expression
-   (let [es (atom [])]
-     (g (g_ (awhen (and-expression)
-              #(swap! es conj %))
-            \^)
-        (reduce #(list (bop->node "^") %1 %2)
-                @es))))
+   (>_ (and-expression) \^
+       #(reduce (fn [x y] (list (bop->node "^") x y))
+                %&)))
   ;; x & y -- left-associative
   (and-expression
-   (let [es (atom [])]
-     (g (g_ (awhen (equality-expression)
-              #(swap! es conj %))
-            \&)
-        (reduce #(list (bop->node "&") %1 %2)
-                @es))))
+   (>_ (equality-expression) \&
+       #(reduce (fn [x y] (list (bop->node "&") x y))
+                %&)))
   ;; x == y, x != y -- left-associative
   (equality-expression
    (let [es (atom nil)
@@ -152,8 +140,8 @@
      (g (reset! es (relational-expression))
         (g* (reset! op (lex (g| "==" "!=")))
             (awhen (relational-expression)
-              #(swap! es (fn [old-es] (list (bop->node @op) old-es %))))))
-     @es))
+              #(swap! es (fn [old-es] (list (bop->node @op) old-es %)))))
+        @es)))
   ;; x <= y, x < y, x >= y, x > y, x instanceof y -- left-associative
   (relational-expression
    (let [es (atom nil)
@@ -168,8 +156,8 @@
                      #(swap! es (fn [old-es]
                                   (list (bop->node @op) old-es %))))
                    ;; (reference-type)
-                   ))))
-     @es))
+                   )))
+        @es)))
   ;; x << y, x >>> y, x >> y -- left-associative
   (shift-expression
    (let [es (atom nil)
@@ -177,8 +165,8 @@
      (g (reset! es (additive-expression))
         (g* (reset! op (lex (g| "<<" ">>>" ">>")))
             (awhen (additive-expression)
-              #(swap! es (fn [old-es] (list (bop->node @op) old-es %))))))
-     @es))
+              #(swap! es (fn [old-es] (list (bop->node @op) old-es %)))))
+        @es)))
   ;; x + y, x - y -- left-associative
   (additive-expression
    (let [es (atom nil)
@@ -195,8 +183,8 @@
      (g (reset! es (unary-expression))
         (g* (reset! op (lex (g| \* \/ \%)))
             (awhen (unary-expression)
-              #(swap! es (fn [old-es] (list (bop->node @op) old-es %))))))
-     @es))
+              #(swap! es (fn [old-es] (list (bop->node @op) old-es %)))))
+        @es)))
   ;; ++x, --x, +x, -x, x++, x--, ~x, !x -- right-associative
   (unary-expression
    (let [op (atom nil)]
@@ -214,7 +202,7 @@
   (pre-decrement-expression
    (g "--" (awhen (unary-expression)
              #(list (preop->node "--") %))))
-  ;; ++x, --x, ~x, !x -- right-associative
+  ;; x++, x++, ~x, !x -- right-associative
   (unary-expression-not-plus-minus
    (let [op (atom nil)]
      (g| (postfix-expression)
@@ -243,10 +231,10 @@
   (primary-no-new-array
    (let [e (atom nil)]
      (g| (literal)
+         (g \( (reset! e (expression)) \) @e)
          ;; (g (java-type) \. (kw :class))
          ;; (g (kw :void) \. (kw :class))
          ;; (g (class-name) \. (kw :this))
-         (g \( (reset! e (expression)) \) @e)
          ;; (class-instance-creation-expression)
          ;; (field-access)
          ;; (method-invocation)
