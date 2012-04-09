@@ -1,0 +1,36 @@
+pre {
+    margin:3px;
+    background-color:#eeffee;
+    padding:10px;
+    border:1px solid #aadddd;
+    /* border-left:1px solid #aadddd; */
+    /* border-top:1px solid #aadddd; */
+    
+}
+
+#peg-literal {
+    color:#00cc00;
+    font-weight:bold;
+}
+
+#peg-cc {
+    color:#00cccc;
+    font-weight:bold;
+}
+
+/* fade into the background  but still visible */
+#peg-dquotes {
+    color:#aadddd;
+}
+
+#peg-post-op {
+    font-size:100%;
+    font-weight:bold;
+    color:#ff0000;
+}
+
+#peg-pre-op {
+    font-size:100%;
+    font-weight:bold;
+    color:#ff0000;
+}

@@ -14,3 +14,6 @@
 
 (testing "Arrays"
   (is (java (slurp "src/ralik/parsers/java_examples/Arrays.java"))))
+
+(testing "Misc"
+  (is (java (slurp "src/ralik/parsers/java_examples/Misc.java"))))

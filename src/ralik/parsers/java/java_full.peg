@@ -1,0 +1,787 @@
+# java.peg
+# Grammar from: The Java Language Specification, Java SE 7 Edition
+# Friday, April  6 2012
+
+Identifier <- IDENTIFIER
+
+Literal
+  <- IntegerLiteral
+   / FloatingPointLiteral
+   / BooleanLiteral
+   / CharacterLiteral
+   / StringLiteral
+   / NullLiteral
+
+IntegerLiteral <- INTEGER
+
+FloatingPointLiteral <- FLOAT
+
+BooleanLiteral
+  <- 'true'
+   / 'false'
+
+CharacterLiteral <- CHARACTER
+
+StringLiteral <- STRING
+
+NullLiteral <- 'null'
+
+Type
+  <- PrimitiveType
+   / ReferenceType
+
+PrimitiveType
+  <- 'boolean'
+   / 'byte'
+   / 'short'
+   / 'int'
+   / 'float'
+   / 'long'
+   / 'double'
+   / 'char'
+
+ReferenceType
+  <- ClassOrInterfaceType
+   / TypeVariable
+   / ArrayType
+
+ClassOrInterfaceType
+  <- ClassType
+   / InterfaceType
+
+ClassType <- TypeDeclSpecifier TypeArguments?
+
+InterfaceType <- TypeDeclSpecifier TypeArguments?
+
+TypeDeclSpecifier
+  <- Identifier
+   / ClassOrInterfaceType '.' Identifier
+
+TypeName <- Identifier ('.' Identifier)*
+
+TypeVariable <- Identifier
+
+ArrayType <- Type '[' ']'
+
+TypeParameter <- TypeVariable TypeBound?
+
+TypeBound
+  <- 'extends' TypeVariable
+   / 'extends' ClassOrInterfaceType AdditionalBoundList?
+
+AdditionalBoundList <- AdditionalBound+
+
+AdditionalBound <- '&' InterfaceType
+
+TypeArguments <- '<' TypeArgumentList '>'
+
+TypeArgumentList <- TypeArgument (',' TypeArgument)*
+
+TypeArgument <- ReferenceType / Wildcard
+
+Wildcard <- '?' WildcardBounds?
+
+WildcardBounds
+  <- 'extends' ReferenceType
+   / 'super' ReferenceType
+
+PackageName <- Identifier ('.' Identifier)
+
+ExpressionName
+  <- Identifier
+   / AmbiguousName '.' Identifier
+
+MethodName
+  <- Identifier
+   / AmbiguousName '.' Identifier
+
+PackageOrTypeName <- Identifier ('.' Identifier)*
+
+AmbiguousName <- Identifier ('.' Identifier)*
+
+# 7.3 Compilation Units
+
+CompilationUnit <- PackageDeclaration? ImportDeclarations? TypeDeclarations?
+
+ImportDeclarations <- ImportDeclaration+
+
+TypeDeclarations <- TypeDeclaration+
+
+# 7.4 Package Declarations
+
+PackageDeclaration <- Annotations? 'package' PackageName ';'
+
+# 7.5 Import Declarations
+
+ImportDeclaration
+  <- SingleTypeImportDeclaration
+   / TypeImportOnDemandDeclaration
+   / SingleStaticImportDeclaration
+   / StaticImportOnDemandDeclaration
+
+SingleTypeImportDeclaration <- 'import' TypeName ';'
+
+TypeImportOnDemandDeclaration <- 'import' PackageOrTypeName '.' '*' ';'
+
+SingleStaticImportDeclaration <- 'import' 'static' TypeName '.' Identifier ';'
+
+StaticImportOnDemandDeclaration <- 'import' 'static' TypeName '.' '*' ';'
+
+# 7.5 Top Level Type Declarations
+
+TypeDeclaration
+  <- ClassDeclaration
+   / InterfaceDeclaration
+   / ';'
+
+# 8.1 Class Declaration
+
+ClassDeclaration
+  <- NormalClassDeclaration
+   / EnumDeclaration
+
+NormalClassDeclaration
+  <- ClassModifiers? 'class' Identifier TypeParameters? Super? Interfaces?
+     ClassBody
+
+ClassModifiers <- ClassModifier+
+
+ClassModifier
+  <- Annotation
+   / 'public'
+   / 'protected'
+   / 'private'
+   / 'abstract'
+   / 'static'
+   / 'final'
+   / 'strictfp'
+
+TypeParameters <- '<' TypeParameterList '>'
+
+TypeParameterList <- TypeParameter (',' TypeParameter)*
+
+Super <- 'extends' ClassType
+
+Interfaces <- 'implements' InterfaceTypeList
+
+InterfaceTypeList <- InterfaceType (',' InterfaceType)*
+
+ClassBody <- '{' ClassBodyDeclarations? '}'
+
+ClassBodyDeclarations <- ClassBodyDeclaration+
+
+ClassBodyDeclaration
+  <- ClassMemberDeclaration
+   / InstanceInitializer
+   / StaticInitializer
+   / ConstructorDeclaration
+
+ClassMemberDeclaration
+  <- FieldDeclaration
+   / MethodDeclaration
+   / ClassDeclaration
+   / InterfaceDeclaration
+   / ';'
+
+FieldDeclaration <- FieldModifiers? Type VariableDeclarators ';'
+
+VariableDeclarators <- VariableDeclarator (',' VariableDeclarator)*
+
+VariableDeclarator <- VariableDeclaratorId ('=' VariableInitializer)?
+
+VariableDeclaratorId <- Identifier ('[' ']')*
+
+VariableInitializer
+  <- Expression
+   / ArrayInitializer
+
+FieldModifiers <- FieldModifier+
+
+FieldModifier
+  <- Annotation
+   / 'public'
+   / 'protected'
+   / 'private'
+   / 'static'
+   / 'final'
+   / 'transient'
+   / 'voltatile'
+
+
+# 8.4 Method Declaration
+
+MethodDeclaration <- MethodHeader MethodBody
+
+MethodHeader
+  <- MethodModifiers? TypeParameters? Result MethodDeclarator Throws?
+
+Result
+  <- Type
+   / 'void'
+
+MethodDeclarator <- Identifier '(' FormalParameterList? ')'
+                    ('[' ']')* # this is to support legacy code
+
+# XXX: ambiguous, may need a &look-ahead for ')'
+
+FormalParameterList <- (FormalParameters ',')?  LastFormalParameter
+
+FormalParameters <- FormalParameter (',' FormalParameter)*
+
+FormalParameter <- VariableModifiers? Type VariableDeclaratorId
+
+VariableModifiers <- VariableModifier+
+
+VariableModifier
+  <- Annotation
+   / 'final'
+
+LastFormalParameter
+  <- VariableModifiers? Type '...' VariableDeclaratorId
+   / FormalParameter
+
+MethodModifiers <- MethodModifier+
+
+MethodModifier
+  <- Annotation
+   / 'public'
+   / 'protected'
+   / 'private'
+   / 'abstract'
+   / 'static'
+   / 'final'
+   / 'synchronized'
+   / 'native'
+   / 'strictfp'
+
+Throws <- 'throws' ExceptionTypeList
+
+ExceptionTypeList <- ExceptionType (',' ExceptionType)*
+
+ExceptionType
+  <- ClassType
+   / TypeVariable
+
+MethodBody
+  <- Block
+   / ';'
+
+# 8.6 Instance Initializers
+
+InstanceInitializer <- Block
+
+StaticInitializer <- 'static' Block
+
+# 8.8 Constructor Declarations
+
+ConstructorDeclaration
+  <- ConstructorModifiers? ConstructorDeclarator Throws? ConstructorBody
+
+ConstructorDeclarator
+  <- TypeParameters? SimpleTypeName '(' FormalParameterList? ')'
+
+ConstructorModifiers <- ConstructorModifier+
+
+ConstructorModifier
+  <- Annotation
+   / 'public'
+   / 'protected'
+   / 'private'
+
+ConstructorBody <- '{' ExplicitConstructorInvocation? BlockStatements? '}'
+
+ExplicitConstructorInvocation
+  <- NonWildTypeArguments? 'this' '(' ArgumentList? ')' ';'
+   / NonWildTypeArguments? 'super' '(' ArgumentList? ')' ';'
+   / Primary '.' NonWildTypeArguments? 'super' '(' ArgumentList? ')' ';'
+
+NonWildTypeArguments <- '<' ReferenceTypeList '>'
+
+ReferenceTypeList <- ReferenceType (',' ReferenceType)*
+
+# 8.9 Enums
+
+EnumDeclaration <- ClassModifiers? 'enum' Identifier Interfaces? EnumBody
+
+EnumBody <- '{' EnumConstants? ','? EnumBodyDeclarations? '}'
+
+EnumConstants <- EnumConstant (',' EnumConstant)*
+
+EnumConstant <- Annotations? Identifier Arguments? ClassBody?
+
+Arguments <- '(' ArgumentList? ')'
+
+EnumBodyDeclarations <- ';' ClassBodyDeclarations?
+
+# 9.1 Interface Declarations
+
+InterfaceDeclaration
+  <- NormalInterfaceDeclaration
+   / AnnotationTypeDeclaration
+
+NormalInterfaceDeclaration
+  <- InterfaceModifiers? 'interface' Identifier TypeParameters?
+     ExtendsInterfaces? InterfaceBody
+
+InterfaceModifiers <- InterfaceModifier+
+
+InterfaceModifier
+  <- Annotation
+   / 'public'
+   / 'protected'
+   / 'private'
+   / 'abstract'
+   / 'static'
+   / 'strictfp'
+
+ExtendsInterfaces <- 'extends' InterfaceTypeList
+
+InterfaceBody <- '{' InterfaceMemberDeclarations? '}'
+
+InterfaceMemberDeclarations <- InterfaceMemberDeclaration+
+
+InterfaceMemberDeclaration
+  <- ConstantDeclaration
+   / AbstractMethodDeclaration
+   / ClassDeclaration
+   / InterfaceDeclaration
+   / ';'
+
+# 9.3 Field Constants
+
+ConstantDeclaration <- ConstantModifiers? Type VariableDeclarators ';'
+
+ConstantModifiers <- ConstantModifier+
+
+ConstantModifier
+  <- Annotation
+   / 'public'
+   / 'static'
+   / 'final'
+
+# 9.4 Abstract Method Declarations
+
+AbstractMethodDeclaration
+  <- AbstractMethodModifiers? TypeParameters? Result MethodDeclarator Throws?
+     ';'
+
+AbstractMethodModifiers <- AbstractMethodModifier+
+
+AbstractMethodModifier
+  <- Annotation
+   / 'public'
+   / 'abstract'
+
+# 9.6 Annotation Types
+
+AnnotationTypeDeclaration
+  <- InterfaceModifiers? '@' 'interface' Identifier AnnotationTypeBody
+
+AnnotationTypeBody <- '{' AnnotationTypeElementDeclarations? '}'
+
+AnnotationTypeElementDeclarations <- AnnotationTypeElementDeclaration+
+
+AnnotationTypeElementDeclaration
+  <- AbstractMethodModifiers? Type Identifier '(' ')' Dims? DefaultValue? ';'
+   / ConstantDeclaration
+   / ClassDeclaration
+   / InterfaceDeclaration
+   / EnumDeclaration
+   / AnnotationTypeDeclaration
+   / ';'
+
+DefaultValue <- 'default' ElementValue
+
+Annotations <- Annotation+
+
+Annotation
+  <- NormalAnnotation
+   / MarkerAnnotation
+   / SingleElementAnnotaion
+
+NormalAnnotation <- '@' TypeName '(' ElementValuePairs? ')'
+
+ElementValuePairs <- ElementValuePair (',' ElementValuePair)*
+
+ElementValuePair <- Identifier '=' ElementValue
+
+ElementValue
+  <- ConditionalExpression
+   / Annotation
+   / ElementValueArrayInitializer
+
+ElementValueArrayInitializer <- '{' ElementValues? ','? '}'
+
+ElementValues <- ElementValue (',' ElementValue)*
+
+MarkerAnnotation <- '@' Identifier
+
+SingleElementAnnotaion <- '@' Identifier '(' ElementValue ')'
+
+# 10.6 Array Initializers
+
+ArrayInitializer <- '{' VariableInitializers? ','? '}'
+
+VariableInitializers <- VariableInitializer (',' VariableInitializer)*
+
+# 14.2 Blocks
+
+Block <- '{' BlockStatements? '}'
+
+BlockStatements <- BlockStatement+
+
+BlockStatement
+  <- LocalVariableDeclarationStatement
+   / ClassDeclaration
+   / Statement
+
+# 14.4 Local Variable Declaration Statement
+
+LocalVariableDeclarationStatement <- LocalVariableDeclaration ';'
+
+LocalVariableDeclaration <- VariableModifiers? Type VariableDeclarators
+
+# 14.5 Statements
+
+Statement
+  <- StatementWithoutTrailingSubstatement
+   / LabeledStatement
+   / IfThenStatement
+   / IfThenElseStatement
+   / WhileStatement
+   / ForStatement
+
+StatementWithoutTrailingSubstatement
+  <- Block
+   / EmptyStatement
+   / ExpressionStatement
+   / AssertStatement
+   / SwitchStatement
+   / DoStatement
+   / BreakStatement
+   / ContinueStatement
+   / ReturnStatement
+   / SynchronizedStatement
+   / ThrowStatement
+   / TryStatement
+
+StatementNoShortIf
+  <- StatementWithoutTrailingSubstatement
+   / LabeledStatementNoShortIf
+   / IfThenElseStatementNoShortIf
+   / WhileStatementNoShortIf
+   / ForStatementNoShortIf
+
+# 14.6 The Empty Statement
+
+EmptyStatement <- ';'
+
+# Labeled Statement
+
+LabeledStatement <- Identifier ':' Statement
+
+LabeledStatementNoShortIf <- Identifier ':' StatementNoShortIf
+
+# 14.8 Expression Statements
+
+ExpressionStatement <- StatementExpression ';'
+
+StatementExpression
+  <- Assignment
+   / PerIncrementExpression
+   / PreDecrementExpression
+   / PostIncrementExpression
+   / PostDecrementExpression
+   / MethodInvocation
+   / ClassInstanceCreationExpression
+
+# 14.9 The if Statement
+
+IfThenStatement <- 'if' '(' Expression ')' Statement
+
+IfThenElseStatement <- 'if' '(' Expression ')' StatementNoShortIf
+                       'else' Statement
+
+IfThenElseStatementNoShortIf <- 'if' '(' Expression ')' StatementNoShortIf
+                                'else' StatementNoShortIf
+
+# 14.10 The assert Statement
+
+AssertStatement
+  <- 'assert' Expression ';'
+   / 'assert' Expression ':' Expression ';'
+
+# 14.11 The switch Statement
+
+SwitchStatement <- 'switch' '(' Expression ')' SwitchBlock
+
+SwitchBlock <- '{' SwitchBlockStatementGroups? SwitchLabels? '}'
+
+SwitchBlockStatementGroups <- SwitchBlockStatementGroup+
+
+SwitchBlockStatementGroup <- SwitchLabels BlockStatements
+
+SwitchLabels <- SwitchLabel+
+
+SwitchLabel
+  <- 'case' ConstantExpression ':'
+   / 'case' EnumConstantName ':'
+   / 'default' ':'
+
+EnumConstantName <- Identifier
+
+# 14.12 The while Statement
+
+WhileStatement <- 'while' '(' Expression ')' Statement
+
+WhileStatementNoShortIf <- 'while' '(' Expression ')' StatementNoShortIf
+
+# 14.13 The do Statement
+
+DoStatement <- 'do' Statement 'while' '(' Expression ')' ';'
+
+# 14.14 The for Statement
+
+ForStatement
+  <- BasicForStatement
+   / EnhancedForStatement
+
+BasicForStatement <- 'for' '(' ForInit? ';' Expression? ';' ForUpdate? ')'
+                     Statement
+
+ForStatementNoShortIf <- 'for' '(' ForInit? ';' Expression? ';' ForUpdate? ')'
+                          StatementNoShortIf
+
+ForInit
+  <- StatementExpressionList
+   / LocalVariableDeclaration
+
+ForUpdate <- StatementExpressionList
+
+StatementExpressionList <- StatementExpression (',' StatementExpression)*
+
+EnhancedForStatement <- 'for' '(' FormalParameter ':' Expression ')' Statement
+
+# 14.15 The break Statement
+
+BreakStatement <- 'break' Identifier? ';'
+
+# 14.16 The continue Statement
+
+ContinueStatement <- 'continue' Identifier? ';'
+
+# 14.17 The return Statement
+
+ReturnStatement <- 'return' Expression? ';'
+
+# 14.18 The throw Statement
+
+ThrowStatement <- 'throw' Expression ';'
+
+# 14.19 The synchronized Statement
+
+SynchronizedStatement <- 'synchronized' '(' Expression ')' Block
+
+# 14.20 The try Statement
+
+TryStatement
+  <- 'try' Block Catches
+   / 'try' Block Catches? Finally
+
+Catches <- CatchClause+
+
+CatchClause <- 'catch' '(' FormalParameter ')' Block
+
+Finally <- 'finally' Block
+
+# 15.8 Primary Expressions
+
+Primary
+  <- PrimaryNoNewArray
+   / ArrayCreationExpression
+
+PrimaryNoNewArray
+  <- Literal
+   / Type '.' 'class'
+   / 'void' '.' 'class'
+   / 'this'
+   / ClassName '.' 'this'
+   / '(' Expression ')'
+   / ClassInstanceCreationExpression
+   / FieldAccess
+   / MethodInvocation
+   / ArrayAccess
+
+ClassInstanceCreationExpression
+  <- 'new' TypeArguments? ClassOrInterfaceType '(' ArgumentList? ')' ClassBody?
+   / Primary '.' 'new' TypeArguments? Identifier TypeArguments?
+     '(' ArgumentList? ')' ClassBody?
+
+ArgumentList <- Expression (',' Expression)*
+
+# 15.10 Array Creation Expressions
+
+ArrayCreationExpression
+  <- 'new' PrimitiveType DimExprs Dims?
+   / 'new' ClassOrInterfaceType DimExprs Dims?
+   / 'new' PrimitiveType Dims ArrayInitializer
+   / 'new' ClassOrInterfaceType Dims ArrayInitializer
+
+DimExprs <- DimExpr+
+
+DimExpr <- '[' Expression ']'
+
+Dims <- ('[' ']')+
+
+# 15.11 Field Access Expressions
+
+FieldAccess
+  <- Primary '.' Identifier
+   / 'super' '.' Identifier
+   / ClassName '.' 'super' '.' Identifier
+
+# 15.12 Method Invocation Expressions
+
+MethodInvocation
+  <- MethodName '(' ArgumentList? ')'
+   / Primary '.' NotWildTypeArguments? Identifier '(' ArgumentList? ')'
+   / 'super' '.' NonWildTypeArguments? Identifier '(' ArgumentList? ')'
+   / ClassName 'super' '.' NonWildTypeArguments? Identifier
+     '(' ArgumentList? ')'
+   / TypeName '.' NonWildTypeArguments Identifier '(' ArgumentList? ')'
+
+# 15.13 Array Access Expressions
+
+ArrayAccess
+  <- ExpressionName '[' Expression ']'
+   / PrimaryNoNewArray '[' Expression ']'
+
+# 15.14 Postfix Expressions
+
+PostfixExpression
+  <- Primary
+   / ExpressionName
+   / PostIncrementExpression
+   / PostDecrementExpression
+
+PostIncrementExpression <- PostfixExpression '++'
+
+PostDecrementExpression <- PostfixExpression '--'
+
+# 15.15 Unary Operators
+
+UnaryExpression
+  <- PerIncrementExpression
+   / PreDecrementExpression
+   / '+' UnaryExpression
+   / '-' UnaryExpression
+   / UnaryExpressionNotPlusMinus
+
+PreIncrementExpression <- '++' UnaryExpression
+
+PreDecrementExpression <- '--' UnaryExpression
+
+UnaryExpressionNotPlusMinus
+  <- PostfixExpression
+   / '~' UnaryExpression
+   / '!' UnaryExpression
+   / CastExpression
+
+# 15.16 Cast Expression
+
+CastExpression
+  <- '(' PrimitiveType ')' UnaryExpression
+   / '(' PrimitiveType ')' UnaryExpressionNotPlusMinus
+
+# 15.17 Multiplicative Operators
+
+MultiplicativeExpression
+  <- UnaryExpression (('*' UnaryExpression)
+                    / ('/' UnaryExpression)
+                    / ('%' UnaryExpression))*
+
+# 15.18 Additive Operators
+
+AdditiveExpression
+  <- MultiplicativeExpression (  ('+' MultiplicativeExpression)
+                               / ('-' MultiplicativeExpression))*
+
+# 15.19 Shift Operators
+
+ShiftExpression
+  <- AdditiveExpression (  ('<<' AdditiveExpression)
+                         / ('>>>' AdditiveExpression)
+			 / ('>>' AdditiveExpression))*
+
+# 15.20 Relational Operators
+
+RelationalExpression
+  <- ShiftExpression (  ('<=' ShiftExpression)
+                      / ('<' ShiftExpression)
+		      / ('>=' ShiftExpression)
+		      / ('>' ShiftExpression)
+		      / ('instanceof' ReferenceType))*
+
+# 15.21 Equality Operators
+
+EqualityExpression
+  <- RelationalExpression (  ('==' RelationalExpression)
+                           / ('!=' RelationalExpression))*
+
+# 15.22 Bitwise and Logical Operators
+
+AndExpression <- EqualityExpression ('&' EqualityExpression)*
+
+ExclusiveOrExpression <- AndExpression ('^' AndExpression)*
+
+InclusiveOrExpression <- ExclusiveOrExpression ('|' ExclusiveOrExpression)*
+
+# 15.23 Conditional-And Operator &&
+
+ConditionalAndExpression
+  <- InclusiveOrExpression ('&&' InclusiveOrExpression)*
+
+# 15.23 Conditional-Or Operator ||
+
+ConditionalOrExpression
+  <- ConditionalAndExpression ('||' ConditionalAndExpression)*
+
+# 15.25 Conditional Operator ? :
+
+ConditionalExpression
+  <- ConditionalOrExpression ('?' Expression ':' ConditionalExpression)?
+
+# 15.26 Assignment Operators
+
+AssignmentExpression
+  <- ConditionalExpression
+   / Assignment
+
+Assignment <- LeftHandSide AssignmentOperator AssignmentExpression
+
+LeftHandSide
+  <- ExpressionName
+   / FieldAccess
+   / ArrayAccess
+
+AssignmentOperator
+  <- '='
+   / '*='
+   / '/='
+   / '%='
+   / '+='
+   / '-='
+   / '<<'
+   / '>>>='
+   / '>>'
+   / '&='
+   / '^='
+   / '|='
+
+# 15.27 Expression
+
+Expression <- AssignmentExpression
+
+# 15.28 ConstantExpression
+
+ConstantExpression <- Expression

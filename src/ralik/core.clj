@@ -398,7 +398,8 @@ Example:
 (defmacro g*
   "Match forms zero or more times. This operator always returns a non-nil
 value. *cur-pos* is advanced each time forms succeeds. If any form in forms
-fails, the parser backtracks"
+fails, the parser backtracks to the end position of the last successful parse
+of forms."
   [& forms]
   `(loop []
      (if (maybe-backtrack ~forms)
@@ -465,9 +466,9 @@ Examples:
 (defmacro g|
   "Return a non-nil value when the first alternate matches.
 Example to match \\x, or \\y, or a digit followed by \\i:
-  (g| \\x                              ; 1st alternate
-       \\y                              ; 2nd alternate
-       (g #\"\\d\" \\i))              ; 3rd alternate, grouped"
+  (g| \\x                    ; 1st alternate
+      \\y                    ; 2nd alternate
+      (g #\"\\d\" \\i))         ; 3rd alternate, grouped"
   [& forms]
   (let [old-pos (gensym)]
     ;; Save the position so the parser can backtrack when/if an alternate
@@ -563,7 +564,9 @@ Example:
     ;; if value is () ~@value (actually nil) will not be present in the
     ;; expanded code, hence the result of g! will be returned. It behaves as
     ;; (list* 'foo nil) => (foo) instead of (foo nil)
-    `(g ~n (-skip (g! :kw-term)) ~@value)))
+    `(g ~n (-skip (g! :kw-term))
+        ;; do is so g wont treat the result as a parser
+        (do ~@value))))
 
 (defmacro kws
   "Like kw except more than one keyword can be supplied as arguments and there
@@ -632,7 +635,7 @@ only argument, else return nil. This is like an anaphoric defined in Graham's
 \"On Lisp\" except 'it' is automagically gensym'ed.
   (awhen true not)                 => false
   (awhen (+ 2 2) (fn [x] (* x 2))) => 8
-  (awhen false (fn [x] ...))       => nil and fn is not called
+  (awhen false (fn [x] ...))       => nil, and fn is not called
 It works best when used with clojures #() lambda syntax:
   (awhen (some-parser-matched?) #(do-something-with-it %))
 The result of some-function does not have to be named but if it's nil, awhen
