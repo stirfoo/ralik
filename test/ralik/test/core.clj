@@ -157,3 +157,11 @@ long cycles = 233422234234234234234234;"
                 eoi
                 @r))
        "a b c d e, f, foo(h i) j bOiNg! bOiNg! bOiNg! 11010101"))
+
+
+(is (= (parse "(1, 2, 3234, 4, 5229384)"
+              (<2g \((>g_ (lex #"[0-9]+") \,
+                          #(map (fn [x] (Integer/parseInt x))
+                                %&)) \)))
+       [1 2 3234 4 5229384])
+    "test <2g and >g_")

@@ -6,14 +6,14 @@
   (:use [ralik.parsers.java])
   (:use [clojure.test]))
 
-(testing "Literals"
-  (is (java (slurp "src/ralik/parsers/java_examples/Literals.java"))))
+;; (testing "Literals"
+;;   (is (java (slurp "src/ralik/parsers/java_examples/Literals.java"))))
 
-(testing "Annotation Type"
-  (is (java (slurp "src/ralik/parsers/java_examples/AnnotationType.java"))))
+;; (testing "Annotation Type"
+;;   (is (java (slurp "src/ralik/parsers/java_examples/AnnotationType.java"))))
 
-(testing "Arrays"
-  (is (java (slurp "src/ralik/parsers/java_examples/Arrays.java"))))
+;; (testing "Arrays"
+;;   (is (java (slurp "src/ralik/parsers/java_examples/Arrays.java"))))
 
-(testing "Misc"
-  (is (java (slurp "src/ralik/parsers/java_examples/Misc.java"))))
+;; (testing "Misc"
+;;   (is (java (slurp "src/ralik/parsers/java_examples/Misc.java"))))

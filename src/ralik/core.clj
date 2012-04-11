@@ -115,7 +115,9 @@ Globals
                  See: the doc for def-atomic-parser"}
   ralik.core)
 
-;; dynamic vars
+;; ------------
+;; Dynamic Vars
+;; ------------
 
 (def ^{:doc "The string being parsed. Initially unbound."}
   *text-to-parse*)
@@ -238,7 +240,9 @@ parsers are eoi, _, eol, wsp, and blank."
                     (set! *cur-pos* (inc *cur-pos*)))))
       (adv-err-pos "expected end of line")))
 
-;; low-level matchers
+;; ------------------
+;; Low-Level Matchers
+;; ------------------
 
 (def ^{:doc "Function to compare two characters for equality, ignoring case."}
   char= (fn [^Character c1 ^Character c2]
@@ -248,17 +252,19 @@ parsers are eoi, _, eol, wsp, and blank."
   char-case= =)
 
 (defn match-char
-  "Return non-nil if the given char x matches *text-to-parse* at *cur-pos*.
+  "Return the given char x if it matches *text-to-parse* at *cur-pos*.
 A pre-skip is performed."
   [x]
   (skip)
   (or (and (< *cur-pos* *end-pos*)
            (*char=* (nth *text-to-parse* *cur-pos*) x)
-           (set! *cur-pos* (inc *cur-pos*)))
+           (set! *cur-pos* (inc *cur-pos*))
+           ;; return the character matched
+           x)
       (adv-err-pos (str "expected character " x))))
 
 (defn match-string
-  "Return non-nil if the given string x matches *text-to-parse* at *cur-pos*.
+  "Return the given string x if it matches *text-to-parse* at *cur-pos*.
 A pre-skip is performed."
   [x]
   (skip)  
@@ -270,7 +276,8 @@ A pre-skip is performed."
                           (first s))
                  (set! *cur-pos* (inc *cur-pos*))
                  (recur (next s)))
-            true))
+            ;; return the string matched
+            x))
         (do (set! *cur-pos* pos)
             (adv-err-pos (str "expected string " x))))))
 
@@ -305,7 +312,9 @@ one of:
                                " *atomic-parsers*: " x))))
    :else (throw (Exception. (str "ralik.core/match: unknown form: " x)))))
 
-;; translator
+;; ----------------
+;; Form Translation
+;; ----------------
 
 ;; '(\x \y)
 ;; Given that example, translate-form will return:
@@ -315,7 +324,7 @@ one of:
 (def ^{:doc "Any op that calls translate-form or maybe-backtrack must be in
              this set"}
   *opset* '#{g* g+ g- g| g& g? op% g> lex g< g +skip -skip
-             +case -case})
+             +case -case <g <1g <2g <3g <4g <5g >g_})
 
 (defn- translate-form
   "Walk form, wrapping strings, characters, and regexps in a match macro. Also
@@ -325,7 +334,9 @@ parsers. form must be a list.
 
 in-parser? will be true if the first element of form is in *opset*.
 This is how action code is mixed with parsing code without having to implement
-an explicit (now-in-action-code ...) fn or macro."
+an explicit (now-in-action-code ...) fn or macro.
+
+Return a list that the caller should splice into its body."
   [form in-parser?]
   (if in-parser?
     (map #(cond
@@ -342,47 +353,64 @@ an explicit (now-in-action-code ...) fn or macro."
             %)
          form)))
 
-;; parsers and utilities
+;; -------------
+;; Basic Parsers
+;; -------------
 
 (defmacro maybe-backtrack
   "Wrap form in code that backtracks *cur-pos* if form fails to match."
   [form]
-  `(let [old-pos# *cur-pos*]
-     (or (and ~@(translate-form form true))
-         (do (set! *cur-pos* old-pos#)
-             nil))))
+  (let [tforms (translate-form form true)]
+    `(let [old-pos# *cur-pos*]
+       (or ~(if (> (count tforms) 1)
+              `(and ~@tforms)
+              (first tforms))
+           (do (set! *cur-pos* old-pos#)
+               nil)))))
 
 (defmacro +case
   "Forms are parsed with case sensitivity enabled. \"FoO\" will not match
 \"foo\". Character and string matchers are affected. Regular expressions are
 not. Return the result of the last form in forms."
   [& forms]
-  `(binding [*match-char-case?* true
-             *char=* char-case=]
-     (and ~@(translate-form forms true))))
+  (let [tforms (translate-form forms true)]
+    `(binding [*match-char-case?* true
+               *char=* char-case=]
+       ~(if (> (count tforms) 1)
+          `(and ~@tforms)
+          (first tforms)))))
 
 (defmacro -case
   "Forms are parsed with case sensitivity disabled. \"FoO\" will match \"foo\".
 Character and string matchers are affected. Regular expressions are not.
 Return the result of the last form in forms."
   [& forms]
-  `(binding [*match-char-case?* false
-             *char=* char=]
-     (and ~@(translate-form forms true))))
+  (let [tforms (translate-form forms true)]
+    `(binding [*match-char-case?* false
+               *char=* char=]
+       ~(if (> (count tforms) 1)
+          `(and ~@tforms)
+          (first tforms)))))
 
 (defmacro +skip
   "Enable skipping while parsing with forms. Return the result of the last
 form in forms."
   [& forms]
-  `(binding [*skip?* true]
-     (and ~@(translate-form forms true))))
+  (let [tforms (translate-form forms true)]
+    `(binding [*skip?* true]
+       ~(if (> (count tforms) 1)
+          `(and ~@tforms)
+          (first tforms)))))
 
 (defmacro -skip
   "Disable skipping while parsing with forms. Return the result of the last
 form in forms."
   [& forms]
-  `(binding [*skip?* false]
-     (and ~@(translate-form forms true))))
+  (let [tforms (translate-form forms true)]
+    `(binding [*skip?* false]
+       ~(if (> (count tforms) 1)
+          `(and ~@tforms)
+          (first tforms)))))
 
 (defmacro g
   "Return a non-nil value if forms matches. This macro performs the duty of the
@@ -393,7 +421,10 @@ Example:
   ;; This will fail when \\y fails to match \\q
   (parse \"xqz\" (g \\x \\y \\z))"
   [& forms]
-  `(and ~@(translate-form forms true)))
+  (let [tforms (translate-form forms true)]
+    (if (> (count tforms) 1)
+      `(and ~@tforms)
+      `(do ~(first tforms)))))
 
 (defmacro g*
   "Match forms zero or more times. This operator always returns a non-nil
@@ -409,22 +440,24 @@ of forms."
 (defmacro g?
   "Match forms zero or one time. This operator always succeeds but the return
 value will show if forms actually matched or not.
-Return true if forms did not match.
-Return :g?-matched if forms matched."
+  * Return the result of forms if forms succeeded.
+  * Return :g?-failed if forms did not succeed."
   [& forms]
   ;; Has to backtrack because non-nil is always returned. if translate-form
   ;; was used instead, an enclosing parser that may backtrack has no way of
   ;; knowing if this failed. All parsers only know nil or false as failure,
   ;; and anything else as success
-  `(if (maybe-backtrack ~forms)
-     :g?-matched
-     true))
+  `(if-let [res# (maybe-backtrack ~forms)]
+     res#
+     :g?-failed))
 
 (defmacro g+
   "Return a non-nil value if forms matches at least once."
   [& forms]
-  `(when (and ~@(translate-form forms true))
-     (g* ~@forms)))
+  `(letfn [(f# []
+             (g ~@(translate-form forms true)))]
+     (when (f#)
+       (g* (f#)))))
 
 (defmacro g-
   "Return a non-nil value if false-form does not match and true-form does.
@@ -438,10 +471,11 @@ Example:
   "Return a non-nil value if forms match. This parser peeks ahead, matching
 forms, but does not advance *cur-pos*."
   [& forms]
-  `(let [old-pos# *cur-pos*
-         result# (and ~@(translate-form forms true))]
-     (set! *cur-pos* old-pos#)          ; backtrack regardless of success
-     result#))
+  (let [tforms (translate-form forms true)]
+    `(binding [*cur-pos* *cur-pos*]
+       ~(if (> (count tforms) 1)
+          `(and ~@tforms)
+          `(do ~(first tforms))))))
 
 (defmacro g!
   "Return a non-nil value if forms do not match. This parser peeks ahead,
@@ -460,8 +494,10 @@ Examples:
  (g_ #\"\\d\" \\,) is just a bit shorter form of:
  (g #\"\\d\" (g* \\, #\"\\d\"))"
   [form separator]
-  `(when (g ~form)
-     (g* ~separator ~form)))
+  `(letfn [(f# []
+             ~@(translate-form (list form) true))]
+     (when (g (f#))
+       (g* ~separator (f#)))))
 
 (defmacro g|
   "Return a non-nil value when the first alternate matches.
@@ -493,9 +529,9 @@ any order.
   (parse \"010100001\" (lex (g< \\0 \\1))) => \"010100001\""
   [& forms]
   ;; this letfn prevents forms from being expanded twice
-  `(letfn [(match-alternate# [] (g| ~@forms))]
-     (when (match-alternate#)
-       (while (match-alternate#))
+  `(letfn [(f# [] (g| ~@forms))]
+     (when (f#)
+       (while (f#))
        true)))
 
 (defmacro lex
@@ -560,13 +596,10 @@ Example:
   (parse \"false\" (kw :false))                => true
   (parse \"false\" (kw :false :foolang-false)) => :foolang-false"
   [kword & value]
-  (let [n (if (seq? kword) kword (name kword))]
-    ;; if value is () ~@value (actually nil) will not be present in the
-    ;; expanded code, hence the result of g! will be returned. It behaves as
-    ;; (list* 'foo nil) => (foo) instead of (foo nil)
-    `(g ~n (-skip (g! :kw-term))
-        ;; do is so g wont treat the result as a parser
-        (do ~@value))))
+  (let [n (if (seq? kword) kword (name kword))
+        ;; keep g from trying to match a supplied return value
+        v (if value `(do ~@value) true)]
+    `(g ~n (-skip (g! :kw-term) ~v))))
 
 (defmacro kws
   "Like kw except more than one keyword can be supplied as arguments and there
@@ -581,18 +614,198 @@ match wins so kwords should be ordered accordingly; foobar before foo:
   `(g (g| ~@(map #(if (seq? %) % (name %)) kwords))
       (-skip (g! :kw-term))))
 
-;; XXX: initial version
-(defmacro >_
-  "Collect the results of a g_ parser and apply them to the function f.
-If form matches at least once, return the result of f, else return nil.
-The collection will be a vector where each matched form is appended."
+;; -------------------------
+;; Extractors and Collectors
+;; -------------------------
+
+(defn- gen-nth-forms
+  "<Ng and >Ng helper"
+  [forms res nth parser]
+  (when (> nth (count forms))
+    (throw (Exception. (str parser " needs at least " nth " argument"
+                            (if (> nth 1) "s" "") " before the function"))))
+  (map (fn [x i] (if (= i nth)
+                   `(awhen ~@(translate-form (list x) true)
+                      #(reset! ~res %))
+                   x))
+       forms
+       (iterate inc 1)))
+
+(defmacro <g
+  "Return the result of each form in forms as a vector.
+This parser is built on, and behaves as, the g parser."
+  [& forms]
+  (let [res (gensym)
+        collectors (map (fn [x] `(awhen ~@(translate-form (list x) true)
+                                   #(swap! ~res conj %)))
+                        forms)]
+    `(let [~res (atom [])]
+       (g ~@collectors
+          (when-not (empty? @~res)
+            @~res)))))
+
+(defmacro <1g
+  "Return the result of the first argument in forms.
+This parser is built on, and behaves as, the g parser."
+  [& forms]
+  (let [res (gensym)
+        forms2 (gen-nth-forms forms res 1 '<1g)]
+    `(let [~res (atom nil)]
+       (g ~@forms2
+          @~res))))
+
+(defmacro <2g
+  "Return the result of the second argument in forms.
+This parser is built on, and behaves as, the g parser."
+  [& forms]
+  (let [res (gensym)
+        forms2 (gen-nth-forms forms res 2 '<2g)]
+    `(let [~res (atom nil)]
+       (g ~@forms2
+          @~res))))
+
+(defmacro <3g
+  "Return the result of the third argument in forms.
+This parser is built on, and behaves as, the g parser."
+  [& forms]
+  (let [res (gensym)
+        forms2 (gen-nth-forms forms res 3 '<3g)]
+    `(let [~res (atom nil)]
+       (g ~@forms2
+          @~res))))
+
+(defmacro <4g
+  "Return the result of the fourth argument in forms.
+This parser is built on, and behaves as, the g parser."
+  [& forms]
+  (let [res (gensym)
+        forms2 (gen-nth-forms forms res 4 '<4g)]
+    `(let [~res (atom nil)]
+       (g ~@forms2
+          @~res))))
+
+(defmacro <5g
+  "Return the result of the fifth argument in forms
+This parser is built on, and behaves as, the g parser."
+  [& forms]
+  (let [res (gensym)
+        forms2 (gen-nth-forms forms res 5 '<5g)]
+    `(let [~res (atom nil)]
+       (g ~@forms2
+          @~res))))
+
+(defmacro >g
+  "Apply the results of forms to f.
+forms+f should be a list of one or more arguments with a function at the tail
+position. This parser is built on, and behaves as, the g parser."
+  [& forms+f]
+  (let [res (gensym)
+        collectors (map (fn [x] `(awhen ~@(translate-form (list x) true)
+                                   #(swap! ~res conj %)))
+                        (butlast forms+f))]
+    `(let [~res (atom [])]
+       (g ~@collectors
+          (apply ~(last forms+f) @~res)))))
+
+(defmacro >1g
+  "Apply the result of the first parser in forms to f.
+forms+f should be a list of one or more arguments with a function at the tail
+position. This parser is built on, and behaves as, the g parser."
+  [& forms+f]
+  (let [res (gensym)
+        forms2 (gen-nth-forms (butlast forms+f) res 1 '>1g)]
+    `(let [~res (atom nil)]
+       (g ~@forms2
+          (~(last forms+f) @~res)))))
+
+(defmacro >2g
+  "Apply the result of the first parser in forms to f.
+forms+f should be a list of one or more arguments with a function at the tail
+position. This parser is built on, and behaves as, the g parser."
+  [& forms+f]
+  (let [res (gensym)
+        forms2 (gen-nth-forms (butlast forms+f) res 2 '>2g)]
+    `(let [~res (atom nil)]
+       (g ~@forms2
+          (~(last forms+f) @~res)))))
+
+(defmacro >3g
+  "Apply the result of the first parser in forms to f.
+forms+f should be a list of one or more arguments with a function at the tail
+position. This parser is built on, and behaves as, the g parser."
+  [& forms+f]
+  (let [res (gensym)
+        forms2 (gen-nth-forms (butlast forms+f) res 3 '>3g)]
+    `(let [~res (atom nil)]
+       (g ~@forms2
+          (~(last forms+f) @~res)))))
+
+(defmacro >4g
+  "Apply the result of the first parser in forms to f.
+forms+f should be a list of one or more arguments with a function at the tail
+position. This parser is built on, and behaves as, the g parser."
+  [& forms+f]
+  (let [res (gensym)
+        forms2 (gen-nth-forms (butlast forms+f) res 4 '>4g)]
+    `(let [~res (atom nil)]
+       (g ~@forms2
+          (~(last forms+f) @~res)))))
+
+(defmacro >5g
+  "Apply the result of the first parser in forms to f.
+forms+f should be a list of one or more arguments with a function at the tail
+position. This parser is built on, and behaves as, the g parser."
+  [& forms+f]
+  (let [res (gensym)
+        forms2 (gen-nth-forms (butlast forms+f) res 5 '>5g)]
+    `(let [~res (atom nil)]
+       (g ~@forms2
+          (~(last forms+f) @~res)))))
+
+(defmacro >g_
+  "Collect the results of each matched form and apply them to the function f.
+This parser is built on, and behaves as, the g_ parser.
+
+separator is not included in the list that f is applied to."
   [form separator f]
   `(let [col# (atom [])]
-     (g_ (awhen (g ~form)
+     (g_ (awhen ~@(translate-form (list form) true)
            #(swap! col# conj %))
          ~separator)
      (when-not (empty? @col#)
        (apply ~f @col#))))
+
+(defmacro <g*
+  "Same as g* but return a vector of successful matches of forms.
+Since a zero-or-more parser never fails, the vector may be empty.
+Example:
+  (<g* p1 p2 p3) => [p1_1 p2_1 p3_1, p1_2 p2_2 p3_2 ...]
+To group the matches:
+  (<g* (<g p1 p2 p3)) => [[p1_1 p2_1 p3_1] [p1_1 p2_1 p3_1] ...]"
+  [& forms]
+  `(loop [col# []]
+     (let [res# (<g ~@forms)]
+       (if res#
+         (recur (into col# res#))
+         col#))))
+
+(defmacro <g+
+  "Same as g+ but return a vector of successful matches of forms."
+  [& forms]
+  `(when-let [first-match# (and ~@(translate-form forms true))]
+     (into [first-match#] (<g* ~@forms))))
+
+(defmacro >lex
+  "Same as lex except the function in the tail position of args is called with
+the resulting string. The result of that function is the result of the
+parser."
+  [& forms+f]
+  `(when-let [s# (lex ~@(butlast forms+f))]
+     (~(last forms+f) s#)))
+
+;; -------
+;; Utility
+;; -------
 
 (defn wsp-skipper
   "Simple non-memoized skipper to ignore all subsequent [ \\r\\n\\t\\f].
@@ -665,7 +878,9 @@ evaluation as its only argument, else evaluate else-form."
      (~then-fn r#)
      ~else-form))
 
-;; Grammar creation
+;; ----------------
+;; Grammar Creation
+;; ----------------
 
 (def *trace-depth*)
 (def *trace-indent*)
@@ -957,7 +1172,9 @@ Example:
                (spep (assoc (offset->line-number *err-pos* *text-to-parse*)
                        :hint *err-msg*)))))))))
 
-;; testing foo
+;; -----------
+;; Testing Foo
+;; -----------
 
 (defmacro parse
   "Parse text with forms. Return non-nil on successful parse. or print a parse
