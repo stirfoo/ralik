@@ -618,173 +618,38 @@ match wins so kwords should be ordered accordingly; foobar before foo:
 ;; Extractors and Collectors
 ;; -------------------------
 
-(defn- gen-nth-forms
-  "<Ng and >Ng helper"
-  [forms res nth parser]
+(defn- collect-nth-form
+  "Helper to wrap forms in code that will return the nth form's result.
+forms is a list of forms given to <g, <g?, etc. result must be a (gensym). nth
+is the 1-based index of the form to wrap."
+  [forms result nth]
   (when (> nth (count forms))
-    (throw (Exception. (str parser " needs at least " nth " argument"
-                            (if (> nth 1) "s" "") " before the function"))))
+    (throw (Exception.
+            (str "not enough arguments passed to collector parser"))))
   (map (fn [x i] (if (= i nth)
                    `(awhen ~@(translate-form (list x) true)
-                      #(reset! ~res %))
+                      #(reset! ~result %))
                    x))
        forms
        (iterate inc 1)))
 
-(defmacro <g
-  "Return the result of each form in forms as a vector.
-This parser is built on, and behaves as, the g parser."
-  [& forms]
-  (let [res (gensym)
-        collectors (map (fn [x] `(awhen ~@(translate-form (list x) true)
-                                   #(swap! ~res conj %)))
-                        forms)]
-    `(let [~res (atom [])]
-       (g ~@collectors
-          (when-not (empty? @~res)
-            @~res)))))
-
-(defmacro <1g
-  "Return the result of the first argument in forms.
-This parser is built on, and behaves as, the g parser."
-  [& forms]
-  (let [res (gensym)
-        forms2 (gen-nth-forms forms res 1 '<1g)]
-    `(let [~res (atom nil)]
-       (g ~@forms2
-          @~res))))
-
-(defmacro <2g
-  "Return the result of the second argument in forms.
-This parser is built on, and behaves as, the g parser."
-  [& forms]
-  (let [res (gensym)
-        forms2 (gen-nth-forms forms res 2 '<2g)]
-    `(let [~res (atom nil)]
-       (g ~@forms2
-          @~res))))
-
-(defmacro <3g
-  "Return the result of the third argument in forms.
-This parser is built on, and behaves as, the g parser."
-  [& forms]
-  (let [res (gensym)
-        forms2 (gen-nth-forms forms res 3 '<3g)]
-    `(let [~res (atom nil)]
-       (g ~@forms2
-          @~res))))
-
-(defmacro <4g
-  "Return the result of the fourth argument in forms.
-This parser is built on, and behaves as, the g parser."
-  [& forms]
-  (let [res (gensym)
-        forms2 (gen-nth-forms forms res 4 '<4g)]
-    `(let [~res (atom nil)]
-       (g ~@forms2
-          @~res))))
-
-(defmacro <5g
-  "Return the result of the fifth argument in forms
-This parser is built on, and behaves as, the g parser."
-  [& forms]
-  (let [res (gensym)
-        forms2 (gen-nth-forms forms res 5 '<5g)]
-    `(let [~res (atom nil)]
-       (g ~@forms2
-          @~res))))
-
-(defmacro >g
-  "Apply the results of forms to f.
-forms+f should be a list of one or more arguments with a function at the tail
-position. This parser is built on, and behaves as, the g parser."
-  [& forms+f]
-  (let [res (gensym)
-        collectors (map (fn [x] `(awhen ~@(translate-form (list x) true)
-                                   #(swap! ~res conj %)))
-                        (butlast forms+f))]
-    `(let [~res (atom [])]
-       (g ~@collectors
-          (apply ~(last forms+f) @~res)))))
-
-(defmacro >1g
-  "Apply the result of the first parser in forms to f.
-forms+f should be a list of one or more arguments with a function at the tail
-position. This parser is built on, and behaves as, the g parser."
-  [& forms+f]
-  (let [res (gensym)
-        forms2 (gen-nth-forms (butlast forms+f) res 1 '>1g)]
-    `(let [~res (atom nil)]
-       (g ~@forms2
-          (~(last forms+f) @~res)))))
-
-(defmacro >2g
-  "Apply the result of the first parser in forms to f.
-forms+f should be a list of one or more arguments with a function at the tail
-position. This parser is built on, and behaves as, the g parser."
-  [& forms+f]
-  (let [res (gensym)
-        forms2 (gen-nth-forms (butlast forms+f) res 2 '>2g)]
-    `(let [~res (atom nil)]
-       (g ~@forms2
-          (~(last forms+f) @~res)))))
-
-(defmacro >3g
-  "Apply the result of the first parser in forms to f.
-forms+f should be a list of one or more arguments with a function at the tail
-position. This parser is built on, and behaves as, the g parser."
-  [& forms+f]
-  (let [res (gensym)
-        forms2 (gen-nth-forms (butlast forms+f) res 3 '>3g)]
-    `(let [~res (atom nil)]
-       (g ~@forms2
-          (~(last forms+f) @~res)))))
-
-(defmacro >4g
-  "Apply the result of the first parser in forms to f.
-forms+f should be a list of one or more arguments with a function at the tail
-position. This parser is built on, and behaves as, the g parser."
-  [& forms+f]
-  (let [res (gensym)
-        forms2 (gen-nth-forms (butlast forms+f) res 4 '>4g)]
-    `(let [~res (atom nil)]
-       (g ~@forms2
-          (~(last forms+f) @~res)))))
-
-(defmacro >5g
-  "Apply the result of the first parser in forms to f.
-forms+f should be a list of one or more arguments with a function at the tail
-position. This parser is built on, and behaves as, the g parser."
-  [& forms+f]
-  (let [res (gensym)
-        forms2 (gen-nth-forms (butlast forms+f) res 5 '>5g)]
-    `(let [~res (atom nil)]
-       (g ~@forms2
-          (~(last forms+f) @~res)))))
-
-(defmacro >g_
-  "Collect the results of each matched form and apply them to the function f.
-This parser is built on, and behaves as, the g_ parser.
-
-separator is not included in the list that f is applied to."
-  [form separator f]
-  `(let [col# (atom [])]
-     (g_ (awhen ~@(translate-form (list form) true)
-           #(swap! col# conj %))
-         ~separator)
-     (when-not (empty? @col#)
-       (apply ~f @col#))))
+(defn- collect-all-forms
+  "Helper to append the result of each form in forms to result.
+forms is a list of forms given to <g, <g?, etc. result must be a (gensym).
+parser is the quoted symbol of the caller for error reporting. Return a list."
+  [forms result]
+  (map (fn [x] `(when-let [res# ~@(translate-form (list x) true)]
+                  (swap! ~result conj res#)))
+       forms))
 
 (defmacro <g*
   "Same as g* but return a vector of successful matches of forms.
 Since a zero-or-more parser never fails, the vector may be empty.
 Example:
-  (<g* p1 p2 p3) => [p1_1 p2_1 p3_1, p1_2 p2_2 p3_2 ...]
-To group the matches:
-  (<g* (<g p1 p2 p3)) => [[p1_1 p2_1 p3_1] [p1_1 p2_1 p3_1] ...]"
+  (<g* p1 p2 p3) => [p1_1 p2_1 p3_1, p1_2 p2_2 p3_2 ...]"
   [& forms]
   `(loop [col# []]
-     (let [res# (<g ~@forms)]
+     (let [res# (<g 0 ~@forms)]
        (if res#
          (recur (into col# res#))
          col#))))
@@ -794,6 +659,67 @@ To group the matches:
   [& forms]
   `(when-let [first-match# (and ~@(translate-form forms true))]
      (into [first-match#] (<g* ~@forms))))
+
+(defmacro <g
+  "Return the result of the 1-based nth argument in forms, or nil.
+If n is 0 return a list of the results of all forms."
+  [n & forms]
+  (when (not (integer? n))
+    (throw (Exception. (str "The first argument to <g must be an integer"
+                            ", got: " n))))
+  (if (= n 0)
+    (let [res (gensym)
+          forms2 (collect-all-forms forms res)]
+      `(let [~res (atom [])]
+         (g ~@forms2 @~res)))
+    (let [res (gensym)
+          forms2 (collect-nth-form forms res n)]
+      `(let [~res (atom nil)]
+         (g ~@forms2 @~res)))))
+
+(defmacro <g?
+  "Return the result of the 1-based nth argument in forms, or :g?-failed.
+If n is 0 return a list of the results of all forms."
+  [n & forms]
+  (when (not (integer? n))
+    (throw (Exception. (str "The first argument to <g? must be an integer"
+                            ", got: " n))))
+  `(if-let [res# (<g ~n ~@forms)]
+     res#
+     :g?-failed))
+
+(defmacro >g
+  "Call the function f with the result of the 1-based nth form in forms.
+forms+f should be a list of one or more arguments with a function at the tail
+position. If n is zero, the result of each form is collected into a
+vector. The funciton f is applied to that vector. Return the result of f or
+nil."
+  [n & forms+f]
+  (when (not (integer? n))
+    (throw (Exception. (str "The first argument to >g must be an integer"
+                            ", got: " n))))
+  (if (= n 0)
+    (let [res (gensym)
+          forms2 (collect-all-forms (butlast forms+f) res)]
+      `(let [~res (atom [])]
+         (g ~@forms2
+            (apply ~(last forms+f) @~res))))
+    (let [res (gensym)
+          forms2 (collect-nth-form (butlast forms+f) res n)]
+      `(let [~res (atom nil)]
+         (g ~@forms2
+            (~(last forms+f) @~res))))))
+
+(defmacro >g_
+  "Collect the results of each matched form and apply the function f to them.
+separator is not included in the list that f is applied to."
+  [form separator f]
+  `(let [col# (atom [])]
+     (g_ (awhen ~@(translate-form (list form) true)
+           #(swap! col# conj %))
+         ~separator)
+     (when-not (empty? @col#)
+       (apply ~f @col#))))
 
 (defmacro >lex
   "Same as lex except the function in the tail position of args is called with

@@ -5,7 +5,20 @@
 (ns ^{:doc "Test Java expression parser"}
   ralik.parsers.java.expression
   (:use ralik.core)
-  (:use [clojure.test :only [is]]))
+  (:use [clojure.test :only [is]])
+  (:require [clojure.contrib.string :as string]))
+
+;; match a character that could be in a reserved word
+(def-atomic-parser :kw-term (match #"[a-z]"))
+
+(def *reserved-words*
+  #{"abstract" "assert" "boolean" "break" "byte" "case" "catch" "char"
+    "class" "const" "continue" "default" "do" "double" "else" "enum"
+    "extends" "false" "final" "finally" "float" "for" "goto" "if"
+    "implements" "import" "instanceof" "int" "interface" "long" "native"
+    "new" "null" "package" "private" "protected" "public" "return" "short"
+    "static" "strictfp" "super" "switch" "synchronized" "this" "throws"
+    "throw" "transient" "try" "true" "void" "volatile" "while"})
 
 ;; ?: is the node (ternary e1 e2 e3)
 
@@ -57,43 +70,35 @@
   {"++" 'j-post-inc
    "--" 'j-post-dec})
 
+(declare java-integer-string-to-number)
+
 (defgrammar java-expression
   "Parse Java expression, return an AST." 
   [:print-err? true
-   :trace? false]
+   :trace? false
+   :profile? false]
   ;;
   (start
-   (<1g (expression) eoi))
+   (<g 1 (expression) eoi))
   ;; 
   (expression
-   (assignment-expression))
-  ;; 
-  (assignment-expression
-   (g| (assignment)
-       (conditional-expression)))
-  ;; x = y, x += y, etc., right-associative
-  (assignment
-   (>g (left-hand-side)
-       (assignment-operator)
-       (assignment-expression)
-       #(list (bop->node %2) %1 %3)))
-  ;;
-  (left-hand-side
-   (g| (qualified-name)
-       ;; (field-access)
-       ;; (array-access)
-       ))
+   (>g 0 (conditional-expression)
+       (<g? 0 (assignment-operator) (expression))
+       #(if (= %2 :g?-failed)
+          %1
+          (let [[op y] %2]
+            (list (bop->node op) %1 y)))))
   ;; foo or foo.bar.baaz
   (qualified-name
    (>g_ (identifier) \.
         #(symbol (apply str (interpose \. %&)))))
   ;; 
   (assignment-operator
-    (g| "=" "*=" "/=" "%=" "+=" "-=" "<<=" ">>>=" ">>=" "&=" "^=" "|="))
+   (g| "=" "*=" "/=" "%=" "+=" "-=" "<<=" ">>>=" ">>=" "&=" "^=" "|="))
   ;; ?:, right-associative
   (conditional-expression
-   (>g (conditional-or-expression)
-       (g? (<g \? (expression) \: (conditional-expression)))
+   (>g 0 (conditional-or-expression)
+       (g? (<g 0 \? (expression) \: (conditional-expression)))
        #(if (= %2 :g?-failed)
           %1
           (list 'ternary %1 (%2 1) (%2 3)))))
@@ -129,7 +134,7 @@
                  %&)))
   ;; x == y, x != y -- left-associative
   (equality-expression
-   (>g (relational-expression)
+   (>g 0 (relational-expression)
        (<g* (g| "==" "!=") (relational-expression))
        #(if (empty? %2)
           %1
@@ -138,9 +143,9 @@
                   %1 (partition 2 %2)))))
   ;; x <= y, x < y, x >= y, x > y, x instanceof y -- left-associative
   (relational-expression
-   (>g (shift-expression)
-       (<g* (g| (<g (g| "<=" \< ">=" \>) (shift-expression))
-                (<g (kw :instanceof "instanceof") (identifier))))
+   (>g 0 (shift-expression)
+       (<g* (g| (<g 0 (g| "<=" \< ">=" \>) (shift-expression))
+                (<g 0 (kw :instanceof "instanceof") (identifier))))
        #(if (empty? %2)
           %1
           (reduce (fn [x [op y]]
@@ -149,7 +154,7 @@
                   %1 %2))))
   ;; x << y, x >>> y, x >> y -- left-associative
   (shift-expression
-   (>g (additive-expression)
+   (>g 0 (additive-expression)
        (<g* (g| "<<" ">>>" ">>") (additive-expression))
        #(if (empty? %2)
           %1
@@ -158,7 +163,7 @@
                   %1 (partition 2 %2)))))
   ;; x + y, x - y -- left-associative
   (additive-expression
-   (>g (multiplicative-expression)
+   (>g 0 (multiplicative-expression)
        (<g* (g| \+ \-) (multiplicative-expression))
        #(if (empty? %2)
           %1
@@ -167,7 +172,7 @@
                   %1 (partition 2 %2)))))
   ;; x * y, x / y, x % y -- left-associative
   (multiplicative-expression
-   (>g (unary-expression)
+   (>g 0 (unary-expression)
        (<g* (g| \* \/ \%) (unary-expression))
        #(if (empty? %2)
           %1
@@ -178,55 +183,178 @@
   (unary-expression
    (g| (pre-increment-expression)
        (pre-decrement-expression)
-       (>g (g| \+ \-) (unary-expression)
+       (>g 0 (g| \+ \-) (unary-expression)
            #(list (uop->node (str %1)) %2))
        (unary-expression-not-plus-minus)))
   ;; ++x -- right-associative
   (pre-increment-expression
-   (>2g "++" (unary-expression)
-        #(list (preop->node "++") %)))
+   (>g 2 "++" (unary-expression)
+       #(list (preop->node "++") %)))
   ;; --x -- right-associative
   (pre-decrement-expression
-   (>2g "--" (unary-expression)
-        #(list (preop->node "--") %)))
+   (>g 2 "--" (unary-expression)
+       #(list (preop->node "--") %)))
   ;; x++, x++, ~x, !x -- right-associative
   (unary-expression-not-plus-minus
    (g| (postfix-expression)
-       (>g (g| \~ \!) (unary-expression)
+       (>g 0 (g| \~ \!) (unary-expression)
            #(list (uop->node (str %1)) %2))
        ;; (cast-expression)
        ))
   ;; x++, x-- -- right-associative
   (postfix-expression
-   (>g (g| (primary)
-           (qualified-name))
+   (>g 0 (g| (primary)
+             (qualified-name))
        (g? (g| "++" "--"))
        #(if (= %2 :g?-failed)
           %1
           (list (postop->node %2) %1))))
   ;; 
   (primary
-   (g| (primary-no-new-array)
-       ;; (array-creation-expression)
-       ))
+   (g| (<g 2 \( (expression) \))
+       (g (kw :this) (g* \. (identifier)) (g? (identifier-suffix)))
+       (g (kw :super) (super-suffix))
+       (literal)
+       ;; (g (kw :new) (creator))
+       (<g 1 (qualified-name) (g? (identifier-suffix)))
+       (g (primitive-type) (g* \[ \]) \. (kw :class))
+       (g (kw :void) \. (kw :class))))
   ;;
-  (primary-no-new-array
-   (g| (literal)
-       (<2g \( (expression) \))
-       ;; (g (java-type) \. (kw :class))
-       ;; (g (kw :void) \. (kw :class))
-       ;; (g (class-name) \. (kw :this))
-       ;; (class-instance-creation-expression)
-       ;; (field-access)
-       ;; (method-invocation)
-       ;; (array-access)
-       ))
+  (primitive-type
+   (kws :boolean :char :byte :short :int :long :float :double))
   ;; 
+  (identifier-suffix
+   (g| (g (g+ \[ \]) \. (kw :class))
+       (g (g+ \[ (expression) \]))
+       (arguments)
+       (g \. (g| (kw :class)
+                 ;; (explicit-generic-invocation)
+                 (kw :this)
+                 ;; (g (kw :super) (arguments))
+                 ;; (g (kw :new) (inner-creator))
+                 ))))
+  ;;
+  (super-suffix
+   (g| (arguments)
+       (g \. (identifier) (g? (arguments)))))
+  ;;
+  (arguments
+   (<g 2 \( (g? (expression-list)) \)))
+  ;;
+  (expression-list
+   (g_ (expression) \,))
+  ;;
   (literal
-   (>lex #"[0-9]+" Integer/parseInt))
+   (g| (floating-point-literal)
+       (integer-literal)
+       (character-literal)
+       (string-literal)
+       (boolean-literal)
+       (null-literal)))
+  ;;
+  (integer-literal
+   (g| (>lex #"0[xX][0-9a-fA-F]++(?![.dDfF])[lL]?"
+             #(java-integer-string-to-number % 16))
+       (>lex #"0[0-7]+(?![.dDfF])[lL]?"
+             #(java-integer-string-to-number % 8))
+       (>lex #"(0|[1-9][0-9]*)(?![.dDfF])[lL]?"
+             #(java-integer-string-to-number % 10))))
+  ;;
+  (floating-point-literal
+   (g| (decimal-floating-point-literal)
+       (hexadecimal-floating-point-literal)))
+  ;;
+  (decimal-floating-point-literal
+   (>lex #"(?x)((\d+\.\d*|\.\d+)([eE][+-]?\d+)?[fFdD]?)
+             | (\d+([eE][+-]?\d+)?[fFdD])
+             | (\d+([eE][+-]?\d+)[fFdD]?)"
+         #(if (#{\f \F} (last %))
+            (Float/parseFloat %)
+            (Double/parseDouble %))))
   ;; 
-  (identifier
-   (>lex #"[a-z]+" symbol)))
+  (hexadecimal-floating-point-literal
+   (>lex #"(?x)0[xX]
+               ([0-9a-fA-F]*\.[0-9a-fA-F]+ | [0-9a-fA-F]+\.?)
+               [pP]
+               [+-]?[0-9]+
+               [fFdD]?"
+         #(if (#{\f \F} (last %))
+            (Float/parseFloat %)
+            (Double/parseDouble %))))
+  ;;
+  (boolean-literal
+   (g| (kw :true :java-true)
+       (kw :false :java-false)))
+  ;; TODO: >2lex
+  ;;       (>2lex \' (character) \' #(first %))
+  (character-literal
+   (skip)
+   (-skip (>g 2 \' (lex (g| (escape-sequence)
+                            (g (g! (g| \' \\ "\n" "\r")) _)))
+              \'
+              #(first %))))
+  ;; TODO: <2lex
+  ;;       (<2lex \" (characters) \")
+  ;;       But don't want to skip after the opening " so perform a preskip,
+  ;;       then turn skipping off. But then lex turns skipping off *again*.
+  (string-literal
+   (skip)
+   (-skip (<g 2 \" (lex (g* (g| (escape-sequence)
+                               (g (g! (g| \\ \" "\n" "\r")) _))))
+               \")))
+   ;; 
+   (unicode-escape
+    (awhen (lex (g \\ \u (g> 4 4 #"[0-9a-fA-F]")))
+      #(let [c (char (Integer/parseInt (subs % 2) 16))]
+         (if-not (#{\newline \return} c) ; hard line terminators not allowed
+           c))))  
+   ;;
+   (escape-sequence
+    (g| (g \\ (g| \b \t \n \f \r \" \' \\))
+        (unicode-escape)
+        (octal-escape)))
+   ;;
+   (octal-escape
+    (g| #"\\[0-3][0-7][0-7]"
+        #"\\[0-7][0-7]"
+        #"\\[0-7]"))
+   ;;
+   (null-literal
+    (kw :null 'null))
+   ;;
+   (identifier
+    (>lex (>lex _ #(Character/isJavaIdentifierStart (first %)))
+          (g* (>lex _ #(Character/isJavaIdentifierPart (first %))))
+          #(when-not (*reserved-words* %)
+             (symbol %)))))
+
+(defn java-integer-string-to-number
+  "Given a java literal integer and a radix, return a number.
+Radix must be one of 8, 10, or 16. The string s can have an optional [lL]
+suffix. Hexadecimal numbers must have an \"0x\" prefix. Return the correct
+size: Integer, Long, or BigInteger."
+  [s radix]
+  {:pre [(#{8 10 16} radix)]
+   :post [(number? %)]}
+  (letfn [(get-num [ss]
+            (if (some #{\l \L} ss)
+              (try
+                (Long/parseLong (string/butlast 1 ss) radix)
+                ;; too big for long
+                (catch NumberFormatException e
+                  (BigInteger. (string/butlast 1 ss) radix)))
+              (try
+                (Integer/parseInt ss radix)
+                ;; too big for int
+                (catch NumberFormatException e
+                  (try
+                    (Long/parseLong ss radix)
+                    ;; too big for long
+                    (catch NumberFormatException e
+                      (BigInteger. ss radix)))))))]
+    (if (= radix 16)
+      (get-num (string/drop 2 s))
+      (get-num s))))
 
 (defn test-it
   []
