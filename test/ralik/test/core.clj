@@ -160,8 +160,6 @@ long cycles = 233422234234234234234234;"
 
 
 (is (= (parse "(1, 2, 3234, 4, 5229384)"
-              (<g 2 \((>g_ (lex #"[0-9]+") \,
-                          #(map (fn [x] (Integer/parseInt x))
-                                %&)) \)))
+              (<g 1 \( (<g_ uint10 \,) \) eoi))
        [1 2 3234 4 5229384])
-    "test <g and >g_")
+    "test <g, >g_, and uint10")

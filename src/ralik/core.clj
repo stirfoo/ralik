@@ -202,8 +202,8 @@ def-atomic-parser is called. body can be any code. The result of the last form
 will be returned as the result of the parser.
 
 Any use of an atomic parser must occur within a ralik operator. ralik
-operators can be used in body. Some built-in atomic parsers are eoi, _, eol,
-wsp, and blank."
+operators can be used in body. Atomic parsers can include other atomic parsers
+in their body. Some built-in atomic parsers are eoi, _, eol, wsp, and blank."
   [name & body]
   (if (> (count body) 1)
     `(swap! *atomic-parsers* assoc '~name [(gensym) '(do ~@body)])
@@ -255,6 +255,47 @@ wsp, and blank."
                     (set! *cur-pos* (inc *cur-pos*)))))
       (adv-err-pos "expected end of line")))
 
+;; Number parsers, java format
+
+(def-atomic-parser uint8
+  (>lex #"0[0-7]+" #(Integer/parseInt % 8)))
+
+(def-atomic-parser sint8
+  (>lex #"[+-]?0[0-7]+"
+        #(-> (if (= (first %)
+                    \+)
+               (subs % 1)
+               %)
+             (Integer/parseInt 8))))
+
+(def-atomic-parser uint10
+  (>lex #"0|[1-9][0-9]*" Integer/parseInt))
+
+(def-atomic-parser sint10
+  (>lex #"[+-]?(0|[1-9][0-9]*)"
+        #(-> (if (= (first %)
+                    \+)
+               (subs % 1) %)
+             Integer/parseInt)))
+
+(def-atomic-parser uint16
+  (>lex #"0x[a-zA-Z0-9][a-fA-F0-9]*"
+        #(Integer/parseInt (subs % 2) 16)))
+
+(def-atomic-parser sint16
+  (>lex #"[+-]?0x[a-zA-Z0-9][a-fA-F0-9]*"
+        #(-> (cond
+              (= (first %) \+) (subs % 3)
+              (= (first %) \-) (str \- (subs % 3))
+              :else (subs % 3))
+             (Integer/parseInt 16))))
+
+(def-atomic-parser uint
+  (g| uint8 uint16 uint10))
+
+(def-atomic-parser sint
+  (g| sint8 sint16 sint10))
+
 ;; ------------------
 ;; Low-Level Matchers
 ;; ------------------
@@ -263,6 +304,7 @@ wsp, and blank."
   char= (fn [^Character c1 ^Character c2]
           (= (.toLowerCase (str c1))
              (.toLowerCase (str c2)))))
+
 (def ^{:doc "Function to compare two characters for equality, using case."}
   char-case= =)
 
@@ -272,7 +314,7 @@ A pre-skip is performed."
   [x]
   (skip)
   (or (and (< *cur-pos* *end-pos*)
-           (*char=* (nth *text-to-parse* *cur-pos*) x)
+           (*char=* (.charAt *text-to-parse* *cur-pos*) x)
            (set! *cur-pos* (inc *cur-pos*))
            ;; return the character matched
            x)
@@ -287,7 +329,7 @@ A pre-skip is performed."
     (or (loop [s (seq x)]
           (if s
             (and (< *cur-pos* *end-pos*)
-                 (*char=* (nth *text-to-parse* *cur-pos*)
+                 (*char=* (.charAt *text-to-parse* *cur-pos*)
                           (first s))
                  (set! *cur-pos* (inc *cur-pos*))
                  (recur (next s)))
@@ -324,8 +366,9 @@ one of:
    ;; if x is found in *atomic-parsers*, insert a call to its gensym'd name
    ;; that was created in def-atomic-parser, in its place.
    (or (symbol? x) (keyword? x))
-   (or (and (x @*atomic-parsers*) `(~(first (x @*atomic-parsers*))))
-       (throw (Exception. (str "match: symbol not found in"
+   (if-let [[name _] (x @*atomic-parsers*)]
+     `(~name)
+     (throw (Exception. (str "match: symbol not found in"
                                " *atomic-parsers*: " x))))
    :else (throw (Exception. (str "ralik.core/match: unknown form: " x)))))
 
@@ -341,7 +384,7 @@ one of:
 (def ^{:doc "Any op that calls translate-form or maybe-backtrack must be in
              this set"}
   *opset* '#{g* g+ g- g| g& g? op% g> lex g< g +skip -skip
-             +case -case <g <1g <2g <3g <4g <5g >g_})
+             +case -case <g >g <g_ >g_ <g+ <g* >lex})
 
 (defn- translate-form
   "Walk form, wrapping strings, characters, and regexps in a match macro. Also
@@ -357,12 +400,23 @@ Return a list that the caller should splice into its body."
   [form in-parser?]
   (if in-parser?
     (map #(cond
-           (list? %) (if (= (first %) 'match)
-                       %
-                       (translate-form % (#{(first %)} *opset*)))
-           (or (char? %) (string? %) (re-pattern? %)) (list 'match %)
-           (and (or (keyword? %) (symbol? %)) (% @*atomic-parsers*))
+           ;; 
+           (list? %)
+           (if (= (first %)
+                  'match)
+             %
+             (translate-form % (#{(first %)} *opset*)))
+           ;; 
+           (or (char? %)
+               (string? %)
+               (re-pattern? %))
            (list 'match %)
+           ;; 
+           (and (or (keyword? %)
+                    (symbol? %))
+                (% @*atomic-parsers*))
+           (list 'match %)
+           ;; 
            :else %)
          form)
     (map #(if (list? %)
@@ -637,10 +691,9 @@ match wins so kwords should be ordered accordingly; foobar before foo:
 
 (defn- collect-nth-form
   "Helper to wrap forms in code that will return the nth form's result.
-forms is a list of forms given to <g, <g?, etc. result must be a (gensym). nth
-is the 1-based index of the form to wrap."
+forms is a list of forms given to <g, <g?, etc. result must be a (gensym)."
   [forms result nth]
-  (when (> nth (count forms))
+  (when (>= nth (count forms))
     (throw (Exception.
             (str "not enough arguments passed to collector parser"))))
   (map (fn [x i] (if (= i nth)
@@ -648,7 +701,7 @@ is the 1-based index of the form to wrap."
                       #(reset! ~result %))
                    x))
        forms
-       (iterate inc 1)))
+       (iterate inc 0)))
 
 (defn- collect-all-forms
   "Helper to append the result of each form in forms to result.
@@ -660,20 +713,20 @@ Return a list."
        forms))
 
 (defn- collect-form-range
-  "Helper to append the form n thru form m inclusive to result.
+  "Helper to append the form n (inclusive) thru form m (exclusive) to result.
 forms is a list of forms given to <g, <g?, etc. result must be a (gensym).
 Return a list."
   [n m forms result]
-  (when (> m (count forms))
+  (when (> m (inc (count forms)))
     (throw (Exception.
             (str "not enough arguments passed to collector parser"))))
-  (let [s (set (range n (inc m)))]
+  (let [s (set (range n m))]
     (map (fn [x i] (if (s i)
                      `(awhen ~@(translate-form (list x) true)
                         #(swap! ~result conj %))
                      x))
          forms
-         (iterate inc 1))))
+         (iterate inc 0))))
 
 (defmacro <g*
   "Same as g* but return a vector of successful matches of forms.
@@ -682,7 +735,7 @@ Example:
   (<g* p1 p2 p3) => [p1_1 p2_1 p3_1, p1_2 p2_2 p3_2 ...]"
   [& forms]
   `(loop [col# []]
-     (let [res# (<g 0 ~@forms)]
+     (let [res# (<g ~@forms)]
        (if res#
          (recur (into col# res#))
          col#))))
@@ -694,28 +747,35 @@ Example:
      (into [first-match#] (<g* ~@forms))))
 
 (defmacro <g
-  "Return the result of the 1-based nth argument in forms, or nil.
-If n is 0 return a list of the results of all forms."
+  "Return the result of the nth argument in forms, or nil.
+If n is not an integer, it will be considered the first form and a vector of
+the results of all forms will be returned."
   [n & forms]
-  (when (not (integer? n))
-    (throw (Exception. (str "The first argument to <g must be an integer"
-                            ", got: " n))))
-  (if (= n 0)
-    (let [res (gensym)
-          forms2 (collect-all-forms forms res)]
-      `(let [~res (atom [])]
-         (g ~@forms2 @~res)))
-    (let [res (gensym)
-          forms2 (collect-nth-form forms res n)]
-      `(let [~res (atom nil)]
-         (g ~@forms2 @~res)))))
+  (cond
+   ;; return the result of the nth form
+   (integer? n)
+   (if (>= n 0)
+     (let [res (gensym)
+           forms2 (collect-nth-form forms res n)]
+       `(let [~res (atom nil)]
+          (g ~@forms2 @~res)))
+     (throw (Exception. (str "The first argument to <g must be >= 0"
+                             ", got: " n))))
+   ;; return the result of all forms
+   :else
+   (let [res (gensym)
+         forms2 (collect-all-forms (cons n forms) res)]
+     `(let [~res (atom [])]
+        (g ~@forms2 @~res)))))
 
 (defmacro <g?
-  "Return the result of the 1-based nth argument in forms, or :g?-failed.
-If n is 0 return a list of the results of all forms."
+  "Return the result of the nth argument in forms, or :g?-failed.
+If n is not an integer, it will be considered the first form and a vector of
+the results of all forms will be returned."
   [n & forms]
-  (when (not (integer? n))
-    (throw (Exception. (str "The first argument to <g? must be an integer"
+  (when (and (integer? n)
+             (< n 0))
+    (throw (Exception. (str "The first argument to <g? must be >= 0"
                             ", got: " n))))
   `(if-let [res# (<g ~n ~@forms)]
      res#
@@ -733,52 +793,54 @@ separator is not included."
        @col#)))
 
 (defmacro >g
-  "Call the function f with the result of forms specified by spec.
+  "Call the function f with the result of forms as specified by spec.
 
 forms+f should be a list of one or more arguments with a function at the tail
 position.
 
 spec can be one of:
-  * 0
-    Collect the result of each form into a vector. Apply f to this vector.
-  * int > 0
-    Call f with the result of the one-based nth form
-  * [N, M] where 1 <= N < M
-    Collect the result of each form from N to M (inclusive) into a vector.
-    Apply f to this vector.
+  * int >= 0
+    Call f with the result of the nth form.
+  * [N, M] where 0 <= N < M
+    Collect the result of each form from N (inclusive) to M (exclusive)
+    into a vector. Apply f to this vector.
+  * Not an integer or vector. spec will be considered the first form.
+    Collect the result of every form into a vector. Apply f to this vector.
 
 Return the result of f or nil if any form failed."
   [spec & forms+f]
   (cond
    ;; 0, 1, 2, ...
    (integer? spec)
-   (if (= spec 0)
-     (let [res (gensym)
-           forms2 (collect-all-forms (butlast forms+f) res)]
-       `(let [~res (atom [])]
-          (g ~@forms2
-             (apply ~(last forms+f) @~res))))
+   (if (>= spec 0)
      (let [res (gensym)
            forms2 (collect-nth-form (butlast forms+f) res spec)]
        `(let [~res (atom nil)]
           (g ~@forms2
-             (~(last forms+f) @~res)))))
+             (~(last forms+f) @~res))))
+     (throw (Exception. (str "The first argument to >g must be >= 0, got:"
+                             spec))))
    ;; [N, M]
-   (and (vector? spec)
-        (= (count spec) 2)
-        (<= 1 (spec 0))
-        (< (spec 0) (spec 1)))
+   (vector? spec)
+   (if (and (= (count spec) 2)
+            (<= 0 (spec 0))
+            (< (spec 0) (spec 1)))
+     (let [res (gensym)
+           forms2 (collect-form-range (spec 0) (spec 1)
+                                      (butlast forms+f) res)]
+       `(let [~res (atom [])]
+          (g ~@forms2
+             (apply ~(last forms+f) @~res))))
+     (throw (Exception. (str "The first argument to >g must be a vector of"
+                             " two elements [N, M] where 0 <= N < M holds,"
+                             " got: " spec))))
+   ;; spec not an integer or a vector, collect all form results
+   :else
    (let [res (gensym)
-         forms2 (collect-form-range (spec 0) (spec 1)
-                                    (butlast forms+f) res)]
+         forms2 (collect-all-forms (cons spec (butlast forms+f)) res)]
      `(let [~res (atom [])]
         (g ~@forms2
-           (apply ~(last forms+f) @~res))))
-   ;; invalid
-   :else (throw (Exception. (str "The first argument to >g must be an integer"
-                                 " or a vector of two elements [N, M] where"
-                                 " 1 <= N < M holds, got: "
-                                 spec)))))
+           (apply ~(last forms+f) @~res))))))
 
 (defmacro >g_
   "Collect the results of each matched form and apply the function f to them.
@@ -1021,30 +1083,6 @@ checked."
     ;; any left over are orphans
     (seq @name-set)))
 
-(defn- atomic-parser-expander
-  "Expand the pairs in *atomic-parsers* to functions.
-Return a list of letfn fnspecs."
-  [rules]
-  (loop [tokens (flatten rules)
-         fns ()
-         sofar #{}]
-    (cond
-     (empty? tokens) fns
-     :else (let [tok (first tokens)]
-             ;; is parser already in fns?
-             (if (get sofar tok)
-               (recur (rest tokens)
-                      fns
-                      sofar)
-               ;; is tok an atomic-parser?
-               (if-let [parser-data (@*atomic-parsers* tok)]
-                 (recur (rest tokens)
-                        (conj fns (list (parser-data 0) [] (parser-data 1)))
-                        (conj sofar tok))
-                 (recur (rest tokens)
-                        fns
-                        sofar)))))))
-
 (defmacro defgrammar
   "Expand to the function `name' that expects or or two arguments: a string of
 the text to parse and an optional start rule. doc-string is not optional. The
@@ -1158,7 +1196,10 @@ Example:
 						  (not= (first r)
 							start-rule))
 			  trace? profile?))
-                      (conj rules rule))]
+                   (conj rules rule))
+               ;; expand all atomic parser code
+               ~@(for [[_ [name code]] @*atomic-parsers*]
+                   `(~name [] ~code))]
          (~start-rule)))
     `(defn ~name
        ~doc-string
@@ -1182,7 +1223,7 @@ Example:
 						   (not= (first %)
 							 start-rule))
 			   trace? profile?)
-                        (conj rules rule))
+                     (conj rules rule))
                  ;; Expand atomic parsers to local fns so they no longer have
                  ;; to be expanded at each point in the grammar.  This will
                  ;; allow the body of def-atomic-parser to freely use ralik
@@ -1190,8 +1231,8 @@ Example:
                  ;; atomic parsers body will only be expanded once, in the
                  ;; function body.
                  ;; TODO: better way to handle :kw-term
-                 ~@(atomic-parser-expander (cons :kw-term (cons rule rules)))
-                 ]
+                 ~@(for [[_ [name code]] @*atomic-parsers*]
+                     `(~name [] ~code))]
            (if-let [result# (~start-rule)]
 	     (do
 	       (when ~profile?
@@ -1221,7 +1262,8 @@ enabled and performed with the fn wsp-skipper. This is a testing utility."
              *char=* char=]             ; use case-insensitive fn
      (letfn [(go# []
                (and ~@(translate-form forms true)))
-             ~@(atomic-parser-expander (cons :kw-term forms))]
+             ~@(for [[_ [name code]] @*atomic-parsers*]
+                 `(~name [] ~code))]
        (if-let [result# (go#)]
          result#
          (spep (merge (offset->line-number *err-pos* *text-to-parse*)

@@ -79,11 +79,11 @@
    :profile? false]
   ;;
   (start
-   (<g 1 (expression) eoi))
+   (<g 0 (expression) eoi))
   ;; 
   (expression
-   (>g 0 (conditional-expression)
-       (<g? 0 (assignment-operator) (expression))
+   (>g (conditional-expression)
+       (<g? (assignment-operator) (expression))
        #(if (= %2 :g?-failed)
           %1
           (let [[op y] %2]
@@ -97,8 +97,8 @@
    (g| "=" "*=" "/=" "%=" "+=" "-=" "<<=" ">>>=" ">>=" "&=" "^=" "|="))
   ;; ?:, right-associative
   (conditional-expression
-   (>g 0 (conditional-or-expression)
-       (g? (<g 0 \? (expression) \: (conditional-expression)))
+   (>g (conditional-or-expression)
+       (g? (<g \? (expression) \: (conditional-expression)))
        #(if (= %2 :g?-failed)
           %1
           (list 'ternary %1 (%2 1) (%2 3)))))
@@ -134,7 +134,7 @@
                  %&)))
   ;; x == y, x != y -- left-associative
   (equality-expression
-   (>g 0 (relational-expression)
+   (>g (relational-expression)
        (<g* (g| "==" "!=") (relational-expression))
        #(if (empty? %2)
           %1
@@ -143,9 +143,9 @@
                   %1 (partition 2 %2)))))
   ;; x <= y, x < y, x >= y, x > y, x instanceof y -- left-associative
   (relational-expression
-   (>g 0 (shift-expression)
-       (<g* (g| (<g 0 (g| "<=" \< ">=" \>) (shift-expression))
-                (<g 0 (kw :instanceof "instanceof") (identifier))))
+   (>g (shift-expression)
+       (<g* (g| (<g (g| "<=" \< ">=" \>) (shift-expression))
+                (<g (kw :instanceof "instanceof") (identifier))))
        #(if (empty? %2)
           %1
           (reduce (fn [x [op y]]
@@ -154,7 +154,7 @@
                   %1 %2))))
   ;; x << y, x >>> y, x >> y -- left-associative
   (shift-expression
-   (>g 0 (additive-expression)
+   (>g (additive-expression)
        (<g* (g| "<<" ">>>" ">>") (additive-expression))
        #(if (empty? %2)
           %1
@@ -163,7 +163,7 @@
                   %1 (partition 2 %2)))))
   ;; x + y, x - y -- left-associative
   (additive-expression
-   (>g 0 (multiplicative-expression)
+   (>g (multiplicative-expression)
        (<g* (g| \+ \-) (multiplicative-expression))
        #(if (empty? %2)
           %1
@@ -172,7 +172,7 @@
                   %1 (partition 2 %2)))))
   ;; x * y, x / y, x % y -- left-associative
   (multiplicative-expression
-   (>g 0 (unary-expression)
+   (>g (unary-expression)
        (<g* (g| \* \/ \%) (unary-expression))
        #(if (empty? %2)
           %1
@@ -183,27 +183,27 @@
   (unary-expression
    (g| (pre-increment-expression)
        (pre-decrement-expression)
-       (>g 0 (g| \+ \-) (unary-expression)
+       (>g (g| \+ \-) (unary-expression)
            #(list (uop->node (str %1)) %2))
        (unary-expression-not-plus-minus)))
   ;; ++x -- right-associative
   (pre-increment-expression
-   (>g 2 "++" (unary-expression)
+   (>g 1 "++" (unary-expression)
        #(list (preop->node "++") %)))
   ;; --x -- right-associative
   (pre-decrement-expression
-   (>g 2 "--" (unary-expression)
+   (>g 1 "--" (unary-expression)
        #(list (preop->node "--") %)))
   ;; x++, x++, ~x, !x -- right-associative
   (unary-expression-not-plus-minus
    (g| (postfix-expression)
-       (>g 0 (g| \~ \!) (unary-expression)
+       (>g (g| \~ \!) (unary-expression)
            #(list (uop->node (str %1)) %2))
        ;; (cast-expression)
        ))
   ;; x++, x-- -- right-associative
   (postfix-expression
-   (>g 0 (g| (primary)
+   (>g (g| (primary)
              (qualified-name))
        (g? (g| "++" "--"))
        #(if (= %2 :g?-failed)
@@ -211,12 +211,12 @@
           (list (postop->node %2) %1))))
   ;; 
   (primary
-   (g| (<g 2 \( (expression) \))
+   (g| (<g 1 \( (expression) \))
        (g (kw :this) (g* \. (identifier)) (g? (identifier-suffix)))
        (g (kw :super) (super-suffix))
        (literal)
        ;; (g (kw :new) (creator))
-       (<g 1 (qualified-name) (g? (identifier-suffix)))
+       (<g 0 (qualified-name) (g? (identifier-suffix)))
        (g (primitive-type) (g* \[ \]) \. (kw :class))
        (g (kw :void) \. (kw :class))))
   ;;
@@ -239,7 +239,7 @@
        (g \. (identifier) (g? (arguments)))))
   ;;
   (arguments
-   (<g 2 \( (g? (expression-list)) \)))
+   (<g 1 \( (g? (expression-list)) \)))
   ;;
   (expression-list
    (g_ (expression) \,))
@@ -289,7 +289,7 @@
   ;;       (>2lex \' (character) \' #(first %))
   (character-literal
    (skip)
-   (-skip (>g 2 \' (lex (g| (escape-sequence)
+   (-skip (>g 1 \' (lex (g| (escape-sequence)
                             (g (g! (g| \' \\ "\n" "\r")) _)))
               \'
               #(first %))))
@@ -299,9 +299,9 @@
   ;;       then turn skipping off. But then lex turns skipping off *again*.
   (string-literal
    (skip)
-   (-skip (<g 2 \" (lex (g* (g| (escape-sequence)
-                               (g (g! (g| \\ \" "\n" "\r")) _))))
-               \")))
+   (-skip (<g 1 \" (lex (g* (g| (escape-sequence)
+                                (g (g! (g| \\ \" "\n" "\r")) _))))
+              \")))
    ;; 
    (unicode-escape
     (awhen (lex (g \\ \u (g> 4 4 #"[0-9a-fA-F]")))
