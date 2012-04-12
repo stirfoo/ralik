@@ -13,7 +13,6 @@
    :trace? false
    :profile? false]
   (start
-   (<1g (statement) eoi))
+   (<g 1 (statement) eoi))
   (statement
-   (>g (left-hand-side)
-       ())))
+   (-skip blank "foo" blank)))

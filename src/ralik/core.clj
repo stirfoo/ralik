@@ -66,8 +66,13 @@ lex    & forms     return the matched text
 Atomic parsers
 ------------------------------------------------------------------------------
 These parsers were defined with def-atomic-parser. Their names are keys in the
-map *atomic-parsers*. Their values are code that will be expanded in their
-place during macro expansion.
+map *atomic-parsers*. Their values are vectors with the contents:
+  [(gensym) code]
+When a defgrammar is expanded the rules are searched for atomic parsers. When
+one is found a local fn is created in the expanded letfn with the rest of the
+rules. The name of the fn is the (gensym) from above. The body of the fn is
+the code from above. Each instance of an atomic parser is expanded into a call
+to its associated gensym'd name.
 
 wsp       match a single space, tab, newline, or cursor return
 blank     match a single space or tab
@@ -154,12 +159,17 @@ The result of the rule is cached regardless if it succeeds or not. Initially
 unbound."}
   *grammar-rule-cache*)
 
-;; globals
+;; -------
+;; Globals
+;; -------
 
-(def ^{:doc "Symbol -> character-level parser code map"}
+(def ^{:doc "Symbol -> [fn-name parser-code] map
+See: def-atomic-parser"}
   *atomic-parsers* (atom {}))
 
+;; -----------
 ;; odds & ends
+;; -----------
 
 (defn skip
   "If *skip?* is true call *skipper*"
@@ -179,20 +189,25 @@ hinting as to why the parser failed. Return nil."
   [x]
   (= (type x) java.util.regex.Pattern))
 
-;; atomic parsers
+;; --------------
+;; Atomic Parsers
+;; --------------
 
 (defmacro def-atomic-parser 
-  "Define a named character-level parser.
+  "Define a named parser that can be used without ().
 name can be an (unquoted) symbol or a keyword. It can be used as if it were
 defined with CL symbol-macrolet (No (foo) syntax required). name will simply
-be replaced by the contents of BODY. Any use of an atomic parser must occur
-within a ralik operator. Atomic parsers should be low-level (fast). ralik
-operators can be used in body, but it will add overhead. Some built-in atomic
-parsers are eoi, _, eol, wsp, and blank."
+be replaced by a fn call where the name of the fn is gensym'd at the time
+def-atomic-parser is called. body can be any code. The result of the last form
+will be returned as the result of the parser.
+
+Any use of an atomic parser must occur within a ralik operator. ralik
+operators can be used in body. Some built-in atomic parsers are eoi, _, eol,
+wsp, and blank."
   [name & body]
   (if (> (count body) 1)
-    `(swap! *atomic-parsers* assoc '~name '(do ~@body))
-    `(swap! *atomic-parsers* assoc '~name '~(first body))))
+    `(swap! *atomic-parsers* assoc '~name [(gensym) '(do ~@body)])
+    `(swap! *atomic-parsers* assoc '~name [(gensym) '~(first body)])))
 
 (def-atomic-parser :kw-term
   (match #"[A-Za-z0-9_]"))
@@ -306,8 +321,10 @@ one of:
    (char? x) `(match-char ~x)
    (string? x) `(match-string ~x)
    (re-pattern? x) `(match-regexp ~x)
+   ;; if x is found in *atomic-parsers*, insert a call to its gensym'd name
+   ;; that was created in def-atomic-parser, in its place.
    (or (symbol? x) (keyword? x))
-   (or (x @*atomic-parsers*)
+   (or (and (x @*atomic-parsers*) `(~(first (x @*atomic-parsers*))))
        (throw (Exception. (str "match: symbol not found in"
                                " *atomic-parsers*: " x))))
    :else (throw (Exception. (str "ralik.core/match: unknown form: " x)))))
@@ -636,11 +653,27 @@ is the 1-based index of the form to wrap."
 (defn- collect-all-forms
   "Helper to append the result of each form in forms to result.
 forms is a list of forms given to <g, <g?, etc. result must be a (gensym).
-parser is the quoted symbol of the caller for error reporting. Return a list."
+Return a list."
   [forms result]
   (map (fn [x] `(when-let [res# ~@(translate-form (list x) true)]
                   (swap! ~result conj res#)))
        forms))
+
+(defn- collect-form-range
+  "Helper to append the form n thru form m inclusive to result.
+forms is a list of forms given to <g, <g?, etc. result must be a (gensym).
+Return a list."
+  [n m forms result]
+  (when (> m (count forms))
+    (throw (Exception.
+            (str "not enough arguments passed to collector parser"))))
+  (let [s (set (range n (inc m)))]
+    (map (fn [x i] (if (s i)
+                     `(awhen ~@(translate-form (list x) true)
+                        #(swap! ~result conj %))
+                     x))
+         forms
+         (iterate inc 1))))
 
 (defmacro <g*
   "Same as g* but return a vector of successful matches of forms.
@@ -688,27 +721,64 @@ If n is 0 return a list of the results of all forms."
      res#
      :g?-failed))
 
+(defmacro <g_
+  "Same as g_ except return a vector of each successful form.
+separator is not included."
+  [form separator]
+  `(let [col# (atom [])]
+     (g_ (awhen ~@(translate-form (list form) true)
+           #(swap! col# conj %))
+         ~separator)
+     (when-not (empty? @col#)
+       @col#)))
+
 (defmacro >g
-  "Call the function f with the result of the 1-based nth form in forms.
+  "Call the function f with the result of forms specified by spec.
+
 forms+f should be a list of one or more arguments with a function at the tail
-position. If n is zero, the result of each form is collected into a
-vector. The funciton f is applied to that vector. Return the result of f or
-nil."
-  [n & forms+f]
-  (when (not (integer? n))
-    (throw (Exception. (str "The first argument to >g must be an integer"
-                            ", got: " n))))
-  (if (= n 0)
-    (let [res (gensym)
-          forms2 (collect-all-forms (butlast forms+f) res)]
-      `(let [~res (atom [])]
-         (g ~@forms2
-            (apply ~(last forms+f) @~res))))
-    (let [res (gensym)
-          forms2 (collect-nth-form (butlast forms+f) res n)]
-      `(let [~res (atom nil)]
-         (g ~@forms2
-            (~(last forms+f) @~res))))))
+position.
+
+spec can be one of:
+  * 0
+    Collect the result of each form into a vector. Apply f to this vector.
+  * int > 0
+    Call f with the result of the one-based nth form
+  * [N, M] where 1 <= N < M
+    Collect the result of each form from N to M (inclusive) into a vector.
+    Apply f to this vector.
+
+Return the result of f or nil if any form failed."
+  [spec & forms+f]
+  (cond
+   ;; 0, 1, 2, ...
+   (integer? spec)
+   (if (= spec 0)
+     (let [res (gensym)
+           forms2 (collect-all-forms (butlast forms+f) res)]
+       `(let [~res (atom [])]
+          (g ~@forms2
+             (apply ~(last forms+f) @~res))))
+     (let [res (gensym)
+           forms2 (collect-nth-form (butlast forms+f) res spec)]
+       `(let [~res (atom nil)]
+          (g ~@forms2
+             (~(last forms+f) @~res)))))
+   ;; [N, M]
+   (and (vector? spec)
+        (= (count spec) 2)
+        (<= 1 (spec 0))
+        (< (spec 0) (spec 1)))
+   (let [res (gensym)
+         forms2 (collect-form-range (spec 0) (spec 1)
+                                    (butlast forms+f) res)]
+     `(let [~res (atom [])]
+        (g ~@forms2
+           (apply ~(last forms+f) @~res))))
+   ;; invalid
+   :else (throw (Exception. (str "The first argument to >g must be an integer"
+                                 " or a vector of two elements [N, M] where"
+                                 " 1 <= N < M holds, got: "
+                                 spec)))))
 
 (defmacro >g_
   "Collect the results of each matched form and apply the function f to them.
@@ -951,6 +1021,30 @@ checked."
     ;; any left over are orphans
     (seq @name-set)))
 
+(defn- atomic-parser-expander
+  "Expand the pairs in *atomic-parsers* to functions.
+Return a list of letfn fnspecs."
+  [rules]
+  (loop [tokens (flatten rules)
+         fns ()
+         sofar #{}]
+    (cond
+     (empty? tokens) fns
+     :else (let [tok (first tokens)]
+             ;; is parser already in fns?
+             (if (get sofar tok)
+               (recur (rest tokens)
+                      fns
+                      sofar)
+               ;; is tok an atomic-parser?
+               (if-let [parser-data (@*atomic-parsers* tok)]
+                 (recur (rest tokens)
+                        (conj fns (list (parser-data 0) [] (parser-data 1)))
+                        (conj sofar tok))
+                 (recur (rest tokens)
+                        fns
+                        sofar)))))))
+
 (defmacro defgrammar
   "Expand to the function `name' that expects or or two arguments: a string of
 the text to parse and an optional start rule. doc-string is not optional. The
@@ -1088,7 +1182,16 @@ Example:
 						   (not= (first %)
 							 start-rule))
 			   trace? profile?)
-                        (conj rules rule))]
+                        (conj rules rule))
+                 ;; Expand atomic parsers to local fns so they no longer have
+                 ;; to be expanded at each point in the grammar.  This will
+                 ;; allow the body of def-atomic-parser to freely use ralik
+                 ;; core parsers instead of low-level character parsers. The
+                 ;; atomic parsers body will only be expanded once, in the
+                 ;; function body.
+                 ;; TODO: better way to handle :kw-term
+                 ~@(atomic-parser-expander (cons :kw-term (cons rule rules)))
+                 ]
            (if-let [result# (~start-rule)]
 	     (do
 	       (when ~profile?
@@ -1116,10 +1219,13 @@ enabled and performed with the fn wsp-skipper. This is a testing utility."
              *skip?* true               ; O_o
              *match-char-case?* false   ; ignore case
              *char=* char=]             ; use case-insensitive fn
-     (if-let [result# (and ~@(translate-form forms true))]
-       result#
-       (spep (merge (offset->line-number *err-pos* *text-to-parse*)
-                    {:hint *err-msg*})))))
+     (letfn [(go# []
+               (and ~@(translate-form forms true)))
+             ~@(atomic-parser-expander (cons :kw-term forms))]
+       (if-let [result# (go#)]
+         result#
+         (spep (merge (offset->line-number *err-pos* *text-to-parse*)
+                      {:hint *err-msg*}))))))
 
 (defmacro parse-avg-time
   "Call form n times and report an average run time. f should be a function of

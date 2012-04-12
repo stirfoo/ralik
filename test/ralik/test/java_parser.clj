@@ -2,9 +2,9 @@
 ;;;
 ;;; Tuesday, April  3 2012
 
-(ns ralik.test.java-parser
-  (:use [ralik.parsers.java])
-  (:use [clojure.test]))
+;; (ns ralik.test.java-parser
+;;   (:use [ralik.parsers.java.java])
+;;   (:use [clojure.test]))
 
 ;; (testing "Literals"
 ;;   (is (java (slurp "src/ralik/parsers/java_examples/Literals.java"))))
