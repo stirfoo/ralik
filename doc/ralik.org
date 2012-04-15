@@ -1,0 +1,441 @@
+* Intro
+  Ralik is an experimental DSL for recursive descent parsing. It's based on
+  [[http://www.wikipedia.org/wiki/Parsing_expression_grammar][PEGs]]. One of the goals of ralik is to be able to freely mix Clojure code
+  (action or semantic code) with ralik parsers.
+* <<Character-Level Matching>>
+  Lexical analysis is performed on-the-fly while parsing. If [[Skipping]] is
+  enabled, a pre-skip is performed prior to the match.
+
+  For the following to be interpreted as terminal matchers, they must be an
+  argument to a ralik parser. If the match is successful, the [[Current Position]]
+  is advanced one character passed the last character matched.
+** Character
+   Match the given character. See: [[Character Case]]
+   - Succeed :: if the character at the [[Current Position]] matches the given
+		character
+   - Return :: the character matched on success or nil
+   Peg
+   : "x"
+   : "λ"
+   Ralik
+   : \x
+   : \λ
+** String
+   Match the given string of characters. See: [[Character Case]]
+   - Succeed :: if the string at the [[Current Position]] matches the given
+		string
+   - Return :: the string matched on success or nil
+   PEG
+   : "foo"
+   : ">="
+   Ralik
+   : "foo"
+   : ">="
+** Regular Expression
+   Match the given regular expression. See: [[Character Case]]
+   - Succeed :: if the text at the  [[Current Position]] matches the given
+		regexp
+   - Return :: the string matched by the regexp on success or nil
+   PEG only provides for character classes
+   : [+-] [0-9]
+   Ralik uses Clojure's full java.util.regex.Pattern reader syntax
+   : #"[+-]\d"
+** Any Character
+   Match any single character.
+   - Succeed :: if the [[Current Position]] is not at the end of the input
+   - Return :: the character matched on success or nil
+   PEG
+   : .
+   Ralik
+   : _
+* TODO <<Character Case>> [0/1]
+  Case matching with string or character literals is controlled by two
+  parsers. These two parsers have no effect on regular expression
+  matchers. The Pattern flag ~(?i:)~ should be used instead.
+
+  [[defgrammar]] has provisions for setting a default.
+** +case
+   : (+case & forms)
+   - Succeed :: if ~forms~ succeed
+   - Return :: non-nil on success
+   Character case is honored. The following will match only a lower-case /x/.
+   : (+case \x)
+   The following will match /foo/ only.
+   : (+case "foo")
+** -case
+   : (-case & forms)
+   - Succeed :: if ~forms~ succeed
+   - Return :: non-nil on success
+   Character case is ignored. The following will match /x/ or /X/.
+   : (-case \x)
+   The following will match /Foo/, /FOO/, /FoO/, etc.
+   : (-case "foo")
+*** TODO better handling of the +case and -case return value
+    Probably going to need collector and forward parser versions.
+* TODO <<Skipping>> [0/1]
+  Skipping is the act of eating characters between tokens. A pre-skip is
+  preformed prior to [[Character-Level Matching]]. The testing utility [[parse]] uses
+  [[wsp-skipper]] to eat all white space between tokens. [[defgrammar]], described in
+  [[Grammar Creation]], allows the specification of a custom skipper. [[+skip]] and
+  [[-skip]] turn skipping on and off, respectively. These can be nested within one
+  another. [[skip]] can be explicitly called to perform skipping if needed.
+** <<+skip>>
+   : (+skip & forms)
+   - Succeed :: if ~forms~ succeed
+   - Return :: non-nil on success
+   Skipping is enabled for forms.
+   : (+skip \x \y)
+** <<-skip>>
+   : (-skip & forms)
+   - Succeed :: if ~forms~ succeed
+   - Return :: non-nil on success
+	       
+   Skipping is disabled for ~forms~. In the following example, if
+   [[wsp-skipper]] is the current skipper, and there exists white space before
+   the /x/ or /y/ in the input, -skip will return nil.
+   
+   : (-skip \x \y)
+
+   Skipping is generally disabled if for instance, you want to snarf up
+   all characters between the quotes in a literal string.
+** <<skip>>
+   : (skip)
+   - Return :: always a non-nil value
+	       
+   Call the function that [[*skipper*]] is currently bound to. If unbound, do
+   nothing.
+** <<*skipper*>>
+   Initially unbound dynamic Var.
+** <<wsp-skipper>>
+   A core function to skip all white space characters. This is the skipper
+   used by [[parse]], and the default skipper used by [[defgrammar]]. Probably will
+   never have to call this directly.
+   - Return :: always a non-nil value
+*** TODO better handling of the +skip and -skip return value
+    Probably going to need collector and forward parser versions.
+* <<Basic Parsers>>
+  Ralik implements the seven basic PEG operators. These are all predicate
+  parsers. While some may actually return a character or a string, this is a
+  side effect. Their results are meant to be used in a boolean context
+  only. Either they succeed or they fail. For other return semantics see:
+  [[Collector Parsers]] and [[Forward Parsers]].
+
+  Some parsers can enter infinite loops. The following will never return.
+  : (g+ (g? \x))
+  : (g* (g? \x))
+# <<g>>  
+** g
+   : (g form & forms)
+   Match each form, in order.
+   - Succeed :: when every form returns a non-nil value
+   - Fail :: as soon as a form returns nil
+   - Return :: non-nil on success, else nil
+   PEG
+   : ('x' 'y' 'z')
+   Ralik
+   : (g \x \y \z)
+# <<g*>>   
+** g*
+   : (g* form & forms)
+   Match forms zero or more times.
+   - Succeed :: always succeeds
+   - Return :: always returns a non-nil value
+   PEG
+   : 'x'*
+   : ('x' 'y' 'z')*
+   Ralik. The group is implied in the second example.
+   : (g* \x)
+   : (g* \x \y \z)
+# <<g+>>   
+** g+
+   : (g+ form & forms)
+   Match forms one or more times.
+   - Succeed :: when every form returns non-nil at least once
+   - Fail :: as soon as a form returns nil on the first iteration
+   - Return :: non-nil on success, else nil
+   PEG
+   : 'x'+
+   : ('x' 'y' 'z')+
+   Ralik. The group is implied in the second example.
+   : (g+ \x)
+   : (g+ \x \y \z)
+# <<g?>>   
+** g?
+   : (g? form & forms)
+   Match forms zero or one time.
+   - Succeeds :: always succeeds
+   - Return :: If every form returns a non-nil value, return a non-nil
+               value. If any form returns nil, return ~:g?-failed~. This
+               parser will never return nil.
+   PEG
+   : 'x'?
+   : ('x' 'y' 'z')?
+   Ralik. The group is implied in the second example.
+   : (g? \x)
+   : (g? \x \y \z)
+# <<g|>>   
+** g| 
+   : (g| form & forms)
+   Match one of the alternatives in forms, in order. The first match wins so
+   the order of the forms matters. "foo" will match before "foobar" so
+   "foobar" should come first in forms.
+   - Succeed :: as soon as a form returns non-nil
+   - Fail :: if every form returns nil
+   - Return :: non-nil if a form returns non-nil, else nil
+   PEG. Sequences have a higher precedence than the / operator.
+   : 'x' / 'y' / 'z'
+   : 'x' 'y' / 'z'
+   Ralik. \x and \y must be explicitly grouped in the second example.
+   : (g| \x \y \z)
+   : (g| (g \x \y)
+   :     \z)
+# <<g&>>   
+** g&
+   : (g& form & forms)
+   Match if forms match but do not consume any input.
+   - Succeed :: if every form returns a non-nil value
+   - Fail :: as soon as a form returns nil
+   - Return :: non-nil on success, else nil
+   PEG
+   : &'x'
+   Ralik
+   : (g& \x)
+# <<g!>>   
+** g!
+   : (g! form & forms)
+   Match if any form fails but do not consume any input.
+   - Succeed :: as soon as a form returns nil
+   - Fail :: if every form returns a non-nil value
+   - Return :: non-nil on success, else nil
+   PEG
+   : !'x'
+   Ralik
+   : (g! \x)
+* <<Derived Parsers>>
+  These parsers are either built on the [[Basic Parsers]] or perform special
+  tasks not found in a PEG.
+** g- 
+   : (g- true-form false-form)
+   Match ~true-form~, but not ~false-form~. ~false-form~ is matched first.
+   - Succeed :: if ~false-form~ fails and ~true-form~ succeeds
+   - Return :: non-nil on success
+   The following will match any character except an /a/ or a /z/.
+   : (g- _ (g| \a \z))
+** <<g\_>>
+   : (g_ form separator)
+   Match ~form~ interspersed with ~separator~
+   - Succeed :: if ~form~ succeeds at least once
+   - Fail :: if ~form~ fails on the first match or if ~form~ fails to follow
+             ~separator~ on subsequent matches
+   - Return :: non-nil on success
+   The following will match a comma separated list integers or a single
+   integer.
+   : (g_ #"\d+" \,)
+** prm
+   : (prm form & forms)
+   Permutation parser. Match at least one form. There-after match any form
+   zero or more times.
+   - Succeed :: if any form matches at least once
+   - Return :: non-nil on success
+   The following will match a binary string with a minimum length of one bit:
+   : (prm \1 \0)
+** rep
+   : (rep min max form & forms)
+   Match forms a minimum of ~min~ times and a maximum of ~max~ times. This
+   behaves as the regexp {min,max} expression except neither ~min~ nor ~max~
+   are optional. 0 <= ~min~ <= ~max~ must hold. If ~max~ is 0, this parser
+   succeeds but no input is consumed.
+   - Succeed :: if forms match ~min~ to ~max~ times inclusive
+   - Return :: non-nil on success
+   The following will will match 3 to 5 asterisks in a row.
+   : (rep 3 5 \*)
+   Using [[Basic Parsers]]. A silly example but it does show how the order of the
+   forms supplied to [[g|]] matters.
+   : (g| (g \* \* \* \* \*)
+   :     (g \* \* \* \*)
+   :     (g \* \* \*))
+* TODO <<Collector Parsers>> [12/15]
+  These parsers extract and collect some or all of the results of their
+  forms. Or, their return value is somehow based on the match result. They all
+  begin with ~<~. Some of these parsers have the same name -- except for the
+  ~<~ prefix -- as [[Base Parsers]] or [[Derived Parsers]]. The behavior of these
+  parsers is the same; [[<g*]] still matches zero or more of its forms, for
+  example.
+
+  However, their arguments or how those arguments are interpreted may
+  differ. See each parsers documentation for details.
+
+  Note: [[g!]] and [[g&]] have no collector counterparts. These are purely predicate
+  parsers.
+# <<ltg>>
+** TODO <+case
+   : (<+case form & forms)
+** TODO <-case
+   : (<-case form & forms)
+** TODO <+skip
+   : (<+skip form & forms)
+** TODO <-skip
+   : (<-skip form & forms)
+** DONE <g
+   : (<g form & forms)
+   - Succeed :: same as the [[g]] parser
+   - Return :: The result as specified by ~form~ upon success. This may or may
+               not be a vector.
+   Examples:
+   : (<g \x \y \z)        => [\x \y \z]
+   : (<g 0 \x \y \z)      => \x
+   : (<g [0 2] \x \y \z)  => [\x \y]
+# <<ltg*>>
+** DONE <g*
+   : (<g* form & forms)
+   - Succeed :: same as the [[g*]] parser
+   - Return :: a possibly empty vector
+# <<ltg+>>
+** DONE <g+
+   : (<g+ form & forms)
+   - Succeed :: same as the [[g+]] parser
+   - Return :: This parser will always return a non-empty vector upon
+               success. The result of each successful form will be conj'd onto
+               an intermediate vector. At each successful iteration that
+               intermediate vector will be conj'd onto the resulting vector.
+	       If any form fails on the first iteration, return nil.
+   Examples:
+   : (<g+ \x \y \z)         => [[\x \y \z] [\x \y \z] ...]
+   : (<g+ 0 \x \y \z)       => [\x \x ...]
+   : (<g+ [1 3] \x \y \z)   => [[\y \z] [\y \z] ...]
+   : (<g+ 1 \x (<g \y \z))  => [[\y \z] [\y \z] ...]
+# <<ltg?>>
+** DONE <g?
+   : (<g? form & forms)
+   - Succeed :: same the [[g?]] parser
+   - Return :: If ~form~ is an integer or vector, return ~forms~ as described
+               in [[Collector Parsers]]. Else, return the result of every form as
+               a vector. If any form fails, the single value ~:g?-failed~ is
+               returned.
+# <<ltg|>>
+** DONE <g|
+   : (<g| & forms)
+   - Succeed :: same as the [[g|]] parser
+   - Return :: the result of the first successful form, or nil		
+# <<ltg->>
+** DONE <g-
+   : (<g- true-form false-form)
+   - Succeed :: same as the [[g-]] parser
+   - Return :: the result of ~true-form~ or nil
+# <<ltg_>>
+** DONE <g_
+   : (<g_ form separator)
+   : (<g_ i form separator)
+   - Succeed :: same as the [[g_]] parser
+   - Return :: a vector or nil
+# <<ltprm>>
+** DONE <prm
+   : (<prm form & forms)
+   - Succeed :: same as the [[prm]] parser
+   - Return :: a vector of each successive matches of form or nil
+# <<ltrep>>
+** DONE <rep
+   : (<rep min max form &forms)
+   - Succeed :: same as the [[rep]] parser
+   - Return :: a vector containing successive matches of forms or nil
+# <<ltkw>>
+** DONE <kw
+   : (<kw kword)
+   Match ~kword~ which can be an unquoted symbol, a literal string or a
+   Clojure keyword. (name kword) will be used to perform the actual match.
+   - Succeed :: if ~kword~ matches and the next non-skipped character is not
+                matched by the atomic parser [[:kw-term]]
+   - Return :: The keyword matched as a string on success, else nil.
+	       
+   ~kword~ must not be ~true~, ~false~ or ~nil~. All three will throw bizarre
+   Exceptions that will be hard to track down. Quoting them will not help,
+   pass them as strings, or use :true, :false, and :nil, respectively.
+   
+   All three of the following will match the C keyword /int/ if :kw-term is
+   set to match #"[a-zA-Z0-9\_]". They will not, however, match the first
+   three characters in /integer/. On a successful match, they will return the
+   the string "int".
+   : (<kw :int)
+   : (<kw int)            ; kw is a macro, no need to quote symbols
+   : (<kw "int")
+# <<ltkws>>
+** DONE <kws
+   : (<kws kword & kwords)
+   Match one of the given keywords. This matches exactly as [[<kw]].
+   - Succeed :: same as the [[<kw]] parser
+   - Return :: the first matched keyword as a string on success, else nil
+   Example:
+   : (kws bool char short int long float double)
+# <<ltlex>>
+** DONE <lex
+   : (<lex form & forms)
+   Return the text matched by all forms unless:
+   1. ~form~ is an integer >= 0
+
+      Return the text matched by the nth form in ~forms~, which must contain
+      at least one form.
+   2. form is the vector [N,M]
+
+      Return the text matched by the Nth (inclusive) to the Mth (exclusive)
+      form in ~forms~. 0 <= N < M <= |forms| must hold.
+      
+   A pre-skip is performed, then skipping is disabled while matching with
+   ~forms~.
+   
+   - Succeed :: if all forms succeed
+   - Return :: a string on success, else nil
+	       
+   The following will return a C comment including the terminators.
+   : (<lex "/*" (g* (g- _ "*/")) "*/")
+   If 1 is supplied as the first form, only the internal text will be
+   returned.
+   : (<lex 1 "/*" (g* (g- _ "*/")) "*/")
+   This will return the internal text and the trailing */ terminator.
+   : (<lex [1 3] "/*" (g* (g- _ "*/")) "*/")
+** TODO Possibly use into with repetitive parsers
+   : (<g+ \x)
+   Will return [[\x] [\x] [\x]]. Clojure's ~into~ could be used to return [\x
+   \x \x] instead.
+* TODO <<Forward Parsers>> [0/16]
+  These parsers collect results exactly as [[Collection Parsers]] do but, instead
+  of returning a value, they call a function in the tail position of their
+  arguments with that value and return the result of the function. The
+  function is only called if the parser succeeds.
+** TODO >+case
+   : (<+case form & forms)
+** TODO >-case
+   : (<-case form & forms)
+** TODO >+skip
+   : (<+skip form & forms)
+** TODO >-skip
+   : (<-skip form & forms)
+** TODO >g
+   : (>g form & forms+f)
+** TODO >g*
+   : (>g* form & forms+f)
+** TODO >g+
+   : (>g+ form & forms+f)
+** TODO >g?
+   : (>g? form & forms+f)
+** TODO >g|
+   : (>g| form & forms+f)
+** TODO >g-
+   : (>g- true-form false-form f)
+** TODO >g_
+   : (>g_ form separator f)
+   : (>g_ i form separator f)
+** TODO >prm
+   : (>prm form & forms+f)
+** TODO >rep
+   : (>rep min max form & forms+f)
+** TODO >kw
+   : (>kw kword f)
+** TODO >kws
+   : (>kws kword & kwords+f)
+** TODO >lex
+   : (>lex form & forms+f)
+* <<Testing>>
+** <<parse>>
+   : (parse input-string & forms)
+   For testing parsers at the repl. An implied [[g]] parser surrounds forms.
+   [[wsp-skipper]] is hard-coded in.
