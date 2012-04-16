@@ -301,27 +301,44 @@
   (is (= (parse "float" (<g 0 (<kws int char float long) eoi))
          "float")))
 
-;; (testing "Match-one-of-these-keywords operator (kws)"
-;;   (is (parse "
-;; float foo = 2.044;
-;; double bar = 234.30230002;
-;; int baaz = 42;
-;; long cycles = 233422234234234234234234;"
-;;              (g+ (kws :int :long :float :double)
-;;                  #"[a-z]+" \= #"\d+(\.\d*)?" \;)
-;;              eoi)
-;;       "using regex for identifiers and numbers"))
+(testing ">g parser"
+  (is (= (parse "0 1 2" (<g 0 (>g _ _ _ #(vec %&)) eoi))
+         [\0 \1 \2]))
+  (is (= (parse "0 1 2" (<g 0 (>g 0 _ _ _ #(vec %&)) eoi))
+         [\0]))
+  (is (= (parse "0 1 2" (<g 0 (>g 1 _ _ _ #(vec %&)) eoi))
+         [\1]))
+  (is (= (parse "0 1 2" (<g 0 (>g 2 _ _ _ #(vec %&)) eoi))
+         [\2]))
+  (is (= (parse "0 1 2" (<g 0 (>g [0 1] _ _ _ #(vec %&)) eoi))
+         [\0]))
+  (is (= (parse "0 1 2" (<g 0 (>g [1 2] _ _ _ #(vec %&)) eoi))
+         [\1]))
+  (is (= (parse "0 1 2" (<g 0 (>g [2 3] _ _ _ #(vec %&)) eoi))
+         [\2]))
+  (is (= (parse "0 1 2" (<g 0 (>g [0 2] _ _ _ #(vec %&)) eoi))
+         [\0 \1]))
+  (is (= (parse "0 1 2" (<g 0 (>g [1 3] _ _ _ #(vec %&)) eoi))
+         [\1 \2])))
 
-;; (testing "Atomic parsers (wsp, blank, eoi (already tested), eol, _)"
-;;   (is (parse "     " (-skip (g+ wsp)) eoi))
-;;   (is (parse "     " (-skip (g+ blank)) eoi))
-;;   (is (parse "1. Ohio
-;; 2. Russia
-;; 3. Hawaii
-;; 4. Germany
-;; 5. Anarctica" (-skip (g_ (g #"\d" \. blank #"[a-zA-Z]+") eol)) eoi))
-;;   (is (parse "_ will match any character" (g+ _) eoi)))
-
-;; ;;               (<g 1 \( (<g_ uint10 \,) \) eoi))
-;; ;;        [1 2 3234 4 5229384])
-;; ;;     "test <g, >g_, and uint10")
+(testing ">g* parser"
+  (is (= (parse "" (<g 0 (>g* _ #(vec %&)) eoi))
+         []))
+  (is (= (parse "0 1 2" (<g 0 (>g* _ _ _ #(vec %&)) eoi))
+         [[\0 \1 \2]]))
+  (is (= (parse "0 1 2" (<g 0 (>g* 0 _ _ _ #(vec %&)) eoi))
+         [\0]))
+  (is (= (parse "0 1 2" (<g 0 (>g* 1 _ _ _ #(vec %&)) eoi))
+         [\1]))
+  (is (= (parse "0 1 2" (<g 0 (>g* 2 _ _ _ #(vec %&)) eoi))
+         [\2]))
+  (is (= (parse "0 1 2" (<g 0 (>g* [0 1] _ _ _ #(vec %&)) eoi))
+         [[\0]]))
+  (is (= (parse "0 1 2" (<g 0 (>g* [1 2] _ _ _ #(vec %&)) eoi))
+         [[\1]]))
+  (is (= (parse "0 1 2" (<g 0 (>g* [2 3] _ _ _ #(vec %&)) eoi))
+         [[\2]]))
+  (is (= (parse "0 1 2" (<g 0 (>g* [0 2] _ _ _ #(vec %&)) eoi))
+         [[\0 \1]]))
+  (is (= (parse "0 1 2" (<g 0 (>g* [1 3] _ _ _ #(vec %&)) eoi))
+         [[\1 \2]])))

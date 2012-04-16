@@ -396,11 +396,11 @@
    : (<g+ \x)
    Will return [[\x] [\x] [\x]]. Clojure's ~into~ could be used to return [\x
    \x \x] instead.
-* TODO <<Forward Parsers>> [0/16]
+* TODO <<Forward Parsers>> [1/16]
   These parsers collect results exactly as [[Collection Parsers]] do but, instead
   of returning a value, they call a function in the tail position of their
   arguments with that value and return the result of the function. The
-  function is only called if the parser succeeds.
+  function is only called if underlying parser succeeds.
 ** TODO >+case
    : (<+case form & forms)
 ** TODO >-case
@@ -409,14 +409,36 @@
    : (<+skip form & forms)
 ** TODO >-skip
    : (<-skip form & forms)
-** TODO >g
+** DONE >g
    : (>g form & forms+f)
+   Collect the result of forms as the [[<g]] parser does and call the the function
+   ~f~ in the tail position of ~forms+f~ with them. If [[<g]] returns a vector,
+   the function is applied to the vector, else the function is called with the
+   result. The function will only be called if the base parser [[g]] succeeds.
+   - Succeed :: depends on the result of ~f~
+   - Return :: the result of ~f~
+   In this case a vector will be collected. (apply f v) will be called.
+   : (>g #"[0-9a-fA-F]+" #(Integer/parseInt % 16))
+   In this case a string will be collected. (f s) will be called.
+   : (>g 0 #"[0-9a-fA-F]+" #(Integer/parseInt % 16))
 ** TODO >g*
    : (>g* form & forms+f)
+   Collect the result of forms as the [[<g*]] parser does and call the the
+   function ~f~ in the tail position of ~forms+f~ with them.
+   - Succeed :: depends on the result of ~f~
+   - Return :: the result of ~f~
 ** TODO >g+
    : (>g+ form & forms+f)
+   Collect the result of forms as the [[<g+]] parser does and call the the
+   function ~f~ in the tail position of ~forms+f~ with them.
+   - Succeed :: depends on the result of ~f~
+   - Return :: the result of ~f~
 ** TODO >g?
    : (>g? form & forms+f)
+   Collect the result of forms as the [[<g?]] parser does and call the the
+   function ~f~ in the tail position of ~forms+f~ with them.
+   - Succeed :: depends on the result of ~f~
+   - Return :: the result of ~f~
 ** TODO >g|
    : (>g| form & forms+f)
 ** TODO >g-

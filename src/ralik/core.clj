@@ -995,75 +995,91 @@ mth (exclusive) forms. Else, return the string matched by all forms."
           (when res#
             (subs *text-to-parse* start# *cur-pos*)))))))
 
+;; Forward Parsers
 
-;; (defmacro >g
-;;   "Call the function f with the result of forms as specified by spec.
+(defmacro >g
+  [form & forms+f]
+  `(when-let [res# (<g ~form ~@(butlast forms+f))]
+     (if (vector? res#)
+       (apply ~(last forms+f) res#)
+       (~(last forms+f) res#))))
 
-;; forms+f should be a list of one or more arguments with a function at the tail
-;; position.
+(defmacro >g*
+  [form & forms+f]
+  `(let [res# (<g* ~form ~@(butlast forms+f))]
+     (if (vector? res#)
+       (apply ~(last forms+f) res#)
+       (~(last forms+f) res#))))
 
-;; spec can be one of:
-;;   * int >= 0
-;;     Call f with the result of the nth form.
-;;   * [N, M] where 0 <= N < M
-;;     Collect the result of each form from N (inclusive) to M (exclusive)
-;;     into a vector. Apply f to this vector.
-;;   * Not an integer or vector. spec will be considered the first form.
-;;     Collect the result of every form into a vector. Apply f to this vector.
+(defmacro >g+
+  [form & forms+f]
+  `(when-let [res# (<g+ ~form ~@(butlast forms+f))]
+     (if (vector? res#)
+       (apply ~(last forms+f) res#)
+       (~(last forms+f) res#))))
 
-;; Return the result of f or nil if any form failed."
-;;   [spec & forms+f]
-;;   (cond
-;;    ;; 0, 1, 2, ...
-;;    (integer? spec)
-;;    (if (>= spec 0)
-;;      (let [res (gensym)
-;;            forms2 (collect-nth-form (butlast forms+f) res spec)]
-;;        `(let [~res (atom nil)]
-;;           (g ~@forms2
-;;              (~(last forms+f) @~res))))
-;;      (throw (Exception. (str "The first argument to >g must be >= 0, got:"
-;;                              spec))))
-;;    ;; [N, M]
-;;    (vector? spec)
-;;    (if (and (= (count spec) 2)
-;;             (<= 0 (spec 0))
-;;             (< (spec 0) (spec 1)))
-;;      (let [res (gensym)
-;;            forms2 (collect-form-range (spec 0) (spec 1)
-;;                                       (butlast forms+f) res)]
-;;        `(let [~res (atom [])]
-;;           (g ~@forms2
-;;              (apply ~(last forms+f) @~res))))
-;;      (throw (Exception. (str "The first argument to >g must be a vector of"
-;;                              " two elements [N, M] where 0 <= N < M holds,"
-;;                              " got: " spec))))
-;;    ;; spec not an integer or a vector, collect all form results
-;;    :else
-;;    (let [res (gensym)
-;;          forms2 (collect-all-forms (cons spec (butlast forms+f)) res)]
-;;      `(let [~res (atom [])]
-;;         (g ~@forms2
-;;            (apply ~(last forms+f) @~res))))))
+(defmacro >g?
+  [form & forms+f]
+  `(let [res# (<g? ~form ~@(butlast forms+f))]
+     (if (vector? res#)
+       (apply ~(last forms+f) res#)
+       (~(last forms+f) res#))))
 
-;; (defmacro >g_
-;;   "Collect the results of each matched form and apply the function f to them.
-;; separator is not included in the list that f is applied to."
-;;   [form separator f]
-;;   `(let [col# (atom [])]
-;;      (g_ (when-let [res# ~@(translate-form (list form) true)]
-;;            (swap! col# conj res#))
-;;          ~separator)
-;;      (when-not (empty? @col#)
-;;        (apply ~f @col#))))
+(defmacro >g|
+  [form & forms+f]
+  `(when-let [res# (<g| ~form ~@(butlast forms+f))]
+     (if (vector? res#)
+       (apply ~(last forms+f) res#)
+       (~(last forms+f) res#))))
 
-;; (defmacro >lex
-;;   "Same as lex except the function in the tail position of args is called with
-;; the resulting string. The result of that function is the result of the
-;; parser."
-;;   [& forms+f]
-;;   `(when-let [s# (lex ~@(butlast forms+f))]
-;;      (~(last forms+f) s#)))
+(defmacro >g-
+  [true-form false-form f]
+  `(when-let [res# (<g- ~true-form ~false-form)]
+     (if (vector? res#)
+       (apply ~f res#)
+       (~f res#))))
+
+(defmacro >g_
+  "Collect the result of forms as <g_ and call f with them."
+  ([form separator f]
+     `(when-let [res# (<g_ ~form ~separator)]
+        (if (vector? res#)
+          (apply ~f res#)
+          (~f res#))))
+  ([i form separator f]
+     `(when-let [res# (<g_ ~i ~form ~separator)]
+        (if (vector? res#)
+          (apply ~f res#)
+          (~f res#)))))
+
+(defmacro >prm
+  [form & forms+f]
+  `(when-let [res# (<prm ~form ~@(butlast forms+f))]
+     (if (vector? res#)
+       (apply ~(last forms+f) res#)
+       (~(last forms+f) res#))))
+
+(defmacro >rep
+  [min max form & forms+f]
+  `(when-let [res# (<rep ~min ~max ~form ~@(butlast forms+f))]
+     (if (vector? res#)
+       (apply ~(last forms+f) res#)
+       (~(last forms+f) res#))))
+
+(defmacro >kw
+  [kword f]
+  `(when-let [res# (<kw ~kword)]
+     (~f res#)))
+
+(defmacro >kws
+  [kword & kwords+f]
+  `(when-let [res# (<kws ~kword ~@(butlast kwords+f))]
+     (~(last kwords+f) res#)))
+
+(defmacro >lex
+  [form & forms+f]
+  `(when-let [res# (<lex ~form ~@(butlast forms+f))]
+     (~(last forms+f) res#)))
 
 ;; -------
 ;; Utility
