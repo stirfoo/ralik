@@ -1,20 +1,22 @@
-;;; grammar.clj
+;;; parser.clj
 ;;;
 ;;; Sunday, April 15 2012
 
 (ns ^{:doc "Adapted from:
 http://www.bitsavers.org/pdf/dartmouth/BASIC_Oct64.pdf"}
-  ralik.parsers.basic2.grammar
-  (:use ralik.core))
+  ralik.parsers.basic2.parser
+  (:use ralik.core)
+  (:import [ralik RalikException])
+  (:import [ralik.parsers.basic2 BASICException]))
 
-(def sym->node {\^ 'bpow \* 'bmul \/ 'bdiv \+ 'badd \- 'bsub \< 'blt
-                "<=" 'ble \= 'beq \> 'bgt ">=" 'bgt "<>" 'bne})
+(def sym->node {\^ 'bpow, \* '*, \/ '/, \+ '+, \- '-, \< '<,
+                "<=" '<=, \= '==, ">=" '>=, \> '>, "<>" 'bne})
 
 (declare make-skipper)
 
 (defgrammar basic2
   "Parse Dartmouth College BASIC Version 2.
-Return a vector of statement nodes."
+Return a vector containing [line-number node] for each line in the program."
   [:trace? false
    :match-case? false
    :print-err? true
@@ -28,50 +30,54 @@ Return a vector of statement nodes."
   (statement-list
    (>g* (<g| (blank-line)
              (statement))
-        #(into [] (mapcat (fn [x]
-                            (when-not (and (vector? x)
-                                           (= (first x) :noop))
-                              x))
+        #(into [] (mapcat (fn [x] (if (= x [:no-op])
+                                    nil
+                                    x))
                           %&))))
   ;;
   (statement
-   (>g [0 2]
-       (line-num :as-meta)
-       (<g| (rem-stmt) (let-stmt) (read-stmt) (data-stmt)
+   (<g [0 2]
+       (line-num)
+       (<g| (rem-stmt) (let-stmt) (read-stmt) (data-stmt) (next-stmt)
             (print-stmt) (goto-stmt) (if-stmt) (for-stmt) (dim-stmt)
-            (def-stmt) (gosub-stmt) (return-stmt) (stop-stmt) (end-stmt))
-       (g| eol eoi)
-       #(with-meta %2 %1)))
+            (def-stmt) (gosub-stmt) (return-stmt) (stop-stmt) (end-stmt)
+            (>g #"[a-zA-Z]+" (fn [x]
+                               (set! *err-pos* (- *cur-pos* (count x)))
+                               (set! *err-msg* "ILLEGAL INSTRUCTION")
+                               nil)))
+       (g| eol eoi)))
   ;;
   (blank-line
-   (<g 1 eol :noop))
+   (<g 1 eol :no-op))
   ;;
   (line-num
-   [& as-meta?]
-   (>g 0 #"[1-9][0-9]*"
-       #(let [n (Integer/parseInt %)]
-          (if as-meta?
-            {:bline-number n}
-            n))))
+   (>g #"[1-9][0-9]*"
+       #(let [nchars (count %)]
+          (if (> nchars 5)
+            (do
+              (set! *err-pos* (- *cur-pos* nchars))
+              (set! *err-msg* "ILLEGAL LINE NUMBER")
+              nil)
+            (Integer/parseInt %)))))
   ;; 
   (rem-stmt
-   (>g 1 "REM" (<lex (g* (g- _ eol)))
+   (>g 2 "REM" ! (<lex (g* (g- _ eol)))
        #(list 'brem %)))
   ;;
   (let-stmt
-   (>g "LET" (var-name) \= (expr)
-       #(list 'blet %2 %4)))
+   (>g "LET" ! (var-name) \= (expr)
+       #(list 'blet %3 %5)))
   ;; 
   (read-stmt
-   (>g 1 "READ" (var-list)
+   (>g 2 "READ" ! (read-var-list)
        #(cons 'bread %&)))
   ;;
   (data-stmt
-   (>g 1 "DATA" (number-list)
+   (>g 2 "DATA" ! (number-list)
        #(cons 'bdata %&)))
   ;;
   (print-stmt
-   (>g [1 3] "PRINT" (print-args) (print-sep)
+   (>g [2 4] "PRINT" ! (print-args) (print-sep)
        #(concat (cons 'bprint (if (= %1 :g?-failed)
                                 nil
                                 %1))
@@ -94,45 +100,44 @@ Return a vector of statement nodes."
    (<g? 0 (<g| \, \;)))
   ;;
   (goto-stmt
-   (>g 2 "GO" "TO" (line-num)
+   (>g 3 "GO" "TO" ! (line-num)
        #(list 'bgoto %)))
   ;;
   (if-stmt
-   (>g "IF" (expr) (<g| "<=" "<>" \< ">=" \> \=) (expr)
+   (>g "IF" ! (expr) (<g| "<=" "<>" \< ">=" \> \=
+                          (do
+                            (set! *err-msg* "ILLEGAL RELATION")
+                            nil))
+       (expr)
        "THEN" (line-num)
-       #(list 'bif
-              (list (sym->node %3) %2 %4)
-              (list 'bgoto %6))))
-  ;;
+       #(list 'bif (list (sym->node %4) %3 %5) %7)))
+  ;; => (bfor [X (brange i j k?)] s1 s2 s3 next)
   (for-stmt
-   (>g (<g 1 "FOR" (var-name))
-       (<g 1 \= (expr))
+   (>g (<g 2 "FOR" ! (var-name))
+       (<g 1 \= (expr))                 ; %2
        (<g 1 "TO" (expr))
        (<g? 1 "STEP" (expr))
-       eol
-       (statement-list)
-       (>g (line-num :as-meta) "NEXT" (var-name)
-           #(with-meta (list 'bnext %3) %1))
-       #(if (not (= %1 (fnext %7)))
-          (throw (Exception.
-                  (str "LINE " ((meta %7) :bline-number)
-                       ": FOR expected NEXT " %1 ", got NEXT " (fnext %7))))
-          (list* 'bfor [%1 (list* 'brange %2 %3
-                                  (if (= %4 :g?-failed)
-                                    ()
-                                    (list %4)))]
-                 (conj %6 %7)))))
+       #(list* 'bfor %1 %2 %3 (if (= %4 :g?-failed)
+                               nil
+                               (list %4)))))
+  (next-stmt
+   (>g 2 "NEXT" ! (var-name) #(list 'bnext %)))
   ;;
   (dim-stmt
-   (>g 1 "DIM" (dim-arg-list)
+   (>g 2 "DIM" ! (dim-arg-list)
        #(list* 'bdim %&)))
   ;;
   (def-stmt
-    (>g "DEF" (>g 0 #"FN[A-Z]" symbol) \( (>g 0 #"[A-Z]" symbol) \) \= (expr)
-        #(list 'bdef %2 [%4] %7)))
+    (>g "DEF" !
+        (>g #"[fF][nN][a-zA-Z]" #(symbol (.toLowerCase %)))
+        \(
+        (>g #"[a-zA-Z]" #(symbol (.toLowerCase %)))
+        \)
+        \= (expr)
+        #(list 'bdef %3 [%5] %8)))
   ;;
   (gosub-stmt
-   (>g 1 "GOSUB" (line-num)
+   (>g 2 "GOSUB" ! (line-num)
        #(list 'bgosub %)))
   ;;
   (return-stmt
@@ -164,33 +169,43 @@ Return a vector of statement nodes."
   ;;
   (primary
    (<g| (funcall)
-        (array-ref false)
-        (var-name)
+        (array-ref 'baget false)
+        (var-ref)
         (number)
         (par-expr)))
   ;;
   (funcall
-   (>g (>g 0 #"[a-zA-Z]{3,3}" symbol) (par-expr)
-       #(list 'bcall %1 %2)))
-  ;;
+   (>g (>g #"[a-zA-Z]{3,3}"
+           #(symbol (.toLowerCase %)))
+       (par-expr)
+       #(if (= %1 'rnd)
+          (list 'bcall %1)
+          (list 'bcall %1 %2))))
+  ;; 
   (array-ref
-   [int-subscr?]
-   (>g (>g 0 #"[a-zA-Z]" symbol) (subscript int-subscr?)
+   [node-name                           ; badim, baset, baget
+    integer-index?]
+   (>g (>g #"[a-zA-Z]" #(.toLowerCase %)) (subscript integer-index?)
        (fn [s [i j]]
          (if (= j :g?-failed)
-           (list (if int-subscr? 'bdim1 'bref1) s i)
-           (list (if int-subscr? 'bdim2 'bref2) s i j)))))
+           (list node-name s i)
+           (list node-name s i j)))))
+  ;;
+  (var-ref
+   (>g (var-name)
+       #(list 'bvref %)))
   ;;
   (subscript
-   [int-subscr?]
-   (<g [1 3] \( (if int-subscr? (integer) (expr))
-       (<g? 1 \, (if int-subscr? (integer) (expr))) \)))
+   [integer-index?]
+   (<g [1 3]
+       \((if integer-index? (integer) (expr))
+       (<g? 1 \, (if integer-index? (integer) (expr))) \)))
   ;;
   (par-expr
    (<g 1 \( (expr) \)))
   ;;
-  (var-list
-   (<g_ 0 (<g| (array-ref false)
+  (read-var-list
+   (<g_ 0 (<g| (array-ref 'baset false) ; false -> index can be an expression
                (var-name))
         \,))
   ;;
@@ -198,8 +213,7 @@ Return a vector of statement nodes."
    (<g_ 0 (number) \,))
   ;;
   (dim-arg-list
-   (<g_ 0 (array-ref true)
-        \,))
+   (<g_ 0 (array-ref 'badim true) \,))
   ;;
   (literal-string
    (<lex 1 \" (g* (g- _ (g| \" eol))) \"))
@@ -217,9 +231,9 @@ Return a vector of statement nodes."
   ;; 
   (integer
    (>g #"\d+" #(Integer/parseInt %)))
-  ;; 
+  ;; p
   (var-name
-   (>g #"[a-zA-Z][0-9]?" symbol)))
+   (>g #"[a-zA-Z][0-9]?" #(.toLowerCase %))))
 
 (defn make-skipper
   "Eat spaces and tabs.

@@ -1,125 +1,7 @@
 (ns ^{:doc "
-A Parsing Expression Grammar parsing parser to parse PEG parser... parser?
-
-Most parse operators return nil or false on failure and some arbitrary value
-equal to boolean true on success. The exceptions are lex, kw, and g?.
-
-Character-level parsers
-------------------------------------------------------------------------------
-These clojure literals can be used directly within a ralik operator.
-\\x      - match a literal character
-          (g+ \\x) => match one or more x's
-\\uXXXX  - match a literal character given a unicode code point
-          (g+ \\u0233) match one or more ȳ's
-\"foo\"   - match a literal string
-#\"foo\"  - match a regular expression
-          A PEG has syntax for character classes [A-Za-z]. This is the intent
-          of this literal parser. It can be abused though. For instance:
-          #\"(?s).+\" will match the entire input. One of the downsides to
-          using complex regexps to match is there is no way to tell where the
-          match failed.
-
-Functional Parsers and Helpers, actually macros. The first group matches PEG's
-standard operators (), +, *, ?, /, &, and !, respectively. / is reserved by
-Clojure so | will do.
-
-------------------------------------------------------------------------------
-op     args        comment
----    ----------  -----------------------------------------------------------
-g      & forms     match all parser arguments
-g+     & forms     match one or more
-g*     & forms     match zero or more
-                   This parser always succeeds.
-g?     & forms     match zero or one
-                   This parser always succeeds but does backtrack.
-g|     & forms     match the first parser that returns non-nil.
-                   The parser backtracks before trying the next alternate
-                   parser.
-g&     & forms     fail if no match
-                   The parser backtracks regardless of a match.
-g!     & forms     fail if match
-                   The parser backtracks regardless of a match.
----    ----------  -----------------------------------------------------------
-g-     true-form   match the first form but not the second
-       false-form  (g- \"bar\" \"foo\")
-                   is the same as
-                   (g (g! \"foo\") \"bar\")
-g_     form        match delimited text
-       separator   For matching lists of items interspersed with a separator.
-                   (g_ #\"[0-9]+\" \\,) will match: 1,32,753,0,23423423
-prm    & forms     permutation parser
-rep     min         match [min, max] times
-       max         Behaves as the suffix {n,m} in a regular expression except
-       & forms     neither min nor max is optional.
-kw     kword       match the given keyword and return the optional value
-       & value
-kws    & kwords    match one of the given keywords
-lex    & forms     return the matched text
-                   Return all of the text matched by the given parser(s) or
-                   nil if no match.
----    ----------  -----------------------------------------------------------
-+skip  & forms     forms will be parsed with skipping enabled
--skip  & forms     forms will be parsed with skipping disabled
-+case  & forms     forms will be parsed with case sensitivity enabled
--case  & forms     forms will be parsed with case sensitivity disabled
-                  
-Atomic parsers
-------------------------------------------------------------------------------
-These parsers were defined with def-atomic-parser. Their names are keys in the
-map *atomic-parsers*. Their values are vectors with the contents:
-  [(gensym) code]
-When a defgrammar is expanded the rules are searched for atomic parsers. When
-one is found a local fn is created in the expanded letfn with the rest of the
-rules. The name of the fn is the (gensym) from above. The body of the fn is
-the code from above. Each instance of an atomic parser is expanded into a call
-to its associated gensym'd name.
-
-wsp       match a single space, tab, newline, or cursor return
-blank     match a single space or tab
-eoi       match the end of the input
-eol       match the end of a line
-_         match a single character
-          This will always match unless the current position is at *end-pos*.
-          (g+ _) will match all input, one character at a time.
-
-:kw-term  This is a special case. See: kw doc
-
-Utility Functions or Macros
-------------------------------------------------------------------------------
-def-atomic-parser    create an entry into *atomic-parsers* (see: eoi)
-parse                for testing parsers against strings
-offset->line-number  to aid error reporting
-spep                 simple parse error printer
-awhen                anaphoric-like when
-aif                  anaphoric-like if
-parse-avg-time       homeless man's profile tool
-defgrammar           somewhat friendly grammar creation
-
-Dynamic Globals
-------------------------------------------------------------------------------
-These symbols must be bound in a binding form prior to calling any parsing
-functions. They have no default values.
-
-*text-to-parse*     bind to the input string
-*cur-pos*           bind to the point in *text-to-parse* where parsing
-                    should begin, generally 0
-*end-pos*           bind to the length of the input string
-*err-pos*           bind to 0
-*err-msg*           bind to whatever you like, it will probably get
-                    modified
-*skipper*           bind to a function to perform skipping prior to matching a
-                    character, string, or regular expression. Atomic parsers
-                    should call this fn as needed.
-*skip?*             bind to true to enable skipping, false to disable
-*match-char-case?*  bind to false if \"FoO\" is to match \"foo\"
-*char=*             bind to char= or char-case=
-
-Globals
-------------------------------------------------------------------------------
-*atomic-parsers* a symbol->code map
-                 See: the doc for def-atomic-parser"}
+A Parsing Expression Grammar parsing parser to parse PEG parser... parser?"}
   ralik.core
-  (:import [ralik RalikException]))
+  (:import [ralik RalikException CutException]))
 
 ;; ------------
 ;; Dynamic Vars
@@ -159,6 +41,12 @@ Each associated value will be:
 The result of the rule is cached regardless if it succeeds or not. Initially
 unbound."}
   *grammar-rule-cache*)
+(def ^{:doc "For Pseudo-cut operations. This gets bound to false upon entry
+into an alternative (g| <g| >g|) parser. A subsequent ! within one of these
+parsers will set this var to true. The alternate parser will not try any more
+alternatives. Additionally, *cur-pos* will not be reset to the beginning of
+the form containing the !. Initially unbound."}
+  *cut*)
 
 ;; -------
 ;; Globals
@@ -257,6 +145,13 @@ body. Some built-in atomic parsers are eoi, _, eol, wsp, and blank."
                        \return)
                     (set! *cur-pos* (inc *cur-pos*)))))
       (adv-err-pos "expected end of line")))
+
+(def-atomic-parser !
+  (when-not (bound? #'*cut*)
+    (throw (RalikException. (str "cut operator (!) must only occur within an"
+                                 " alternate parser (g|, <g|, or >g|)\n"))))
+  (set! *cut* true)
+  :!-result)
 
 ;; Java Integer subset, return an Integer
 
@@ -425,7 +320,7 @@ one of:
      `(~name)
      (throw (RalikException. (str "match: symbol not found in"
                                   " *atomic-parsers*: " x))))
-   :else (throw (RalikException. (str "ralik.core/match: unknown form: " x)))))
+   :else (throw (RalikException. (str "match: unknown form: " x)))))
 
 ;; ----------------
 ;; Form Translation
@@ -436,10 +331,9 @@ one of:
 ;; ((match \x) (match \y))
 ;; The calling macro should splice that into its body.
 
-(def ^{:doc "Any op that calls translate-form or maybe-backtrack must be in
-             this set"}
-  *opset* '#{g g* g+ g? g| g& g! g- g_ prm rep +skip -skip
-             +case -case})
+(def ^{:doc "Any op that directly calls translate-form or maybe-backtrack must
+             be in this set"}
+  *opset* '#{g g* g+ g? g| g& g_ +skip -skip +case -case})
 
 (defn- translate-form
   "Walk form, wrapping strings, characters, and regexps in a match macro. Also
@@ -479,9 +373,9 @@ Return a list that the caller should splice into its body."
             %)
          form)))
 
-;; -------------
-;; Basic Parsers
-;; -------------
+;; ------------
+;; Backtracking
+;; ------------
 
 (defmacro maybe-backtrack
   "Wrap form in code that backtracks *cur-pos* if form fails to match."
@@ -493,6 +387,10 @@ Return a list that the caller should splice into its body."
               (first tforms))
            (do (set! *cur-pos* old-pos#)
                nil)))))
+
+;; -------------
+;; Basic Parsers
+;; -------------
 
 (defmacro +case
   "Forms are parsed with case sensitivity enabled. \"FoO\" will not match
@@ -539,7 +437,7 @@ form in forms."
           (first tforms)))))
 
 (defmacro g
-  "Return a non-nil value if forms matches. This macro performs the duty of the
+  "Return a non-nil value if forms match. This macro performs the duty of the
 PEG group operator (). Return the result of the last form in forms or nil as
 soon as a form in forms returns nil.
 
@@ -595,17 +493,20 @@ Example to match \\x, or \\y, or a digit followed by \\i:
     ;; Save the position so the parser can backtrack when/if an alternate
     ;; fails to match. I could use maybe-backtrack here but it would expand to
     ;; much more superfluous code than this. Each alternate would get its own
-    ;; old-pos. Bleah! Also, old-pos# will not work here for reasons I do not
-    ;; grok. Hence the gensym.
-    `(let [~old-pos *cur-pos*]
-       (or ~@(map (fn [cur-form]
-		    `(or
-		      ;; this alternate succeeded
-		      ~@(translate-form (list cur-form) true)
-		      ;; this alternate failed so backtrack
-		      (do (set! *cur-pos* ~old-pos)
-			  nil)))
-		  (cons form forms))))))
+    ;; old-pos. Bleah!
+    `(binding [*cut* false]
+       (let [~old-pos *cur-pos*]
+         (try
+           (or ~@(map (fn [cur-form]
+                        `(or
+                          ~@(translate-form (list cur-form) true)
+                          (if *cut*
+                            (throw (CutException.))
+                            (do (set! *cur-pos* ~old-pos)
+                                nil))))
+                      (cons form forms)))
+           (catch CutException e#
+             nil))))))
 
 (defmacro g&
   "Return a non-nil value if forms match. This parser peeks ahead, matching
@@ -671,21 +572,6 @@ hold. If max is 0, rep will be a no-op, but still succeed."
          (or (>= n# ~min)
              (= ~max 0))))
      (throw (RalikException. (str "rep: (<= 0 min max) failed")))))
-
-
-
-(defmacro kws
-  "Like kw except more than one keyword can be supplied as arguments and there
-is no 'value' argument. Return non-nil if one of kwords matches. The first
-match wins so kwords should be ordered accordingly; foobar before foo:
-  ;; This may return a false negative depending on the value of :kw-term
-  (parse \"foobar\" (kws foo foobar))
-  ;; This will not becuase of the correct ordering of foobar and foo
-  (parse \"foobar\" (kws foobar foo))"
-  [kword & kwords]
-  ;; perl?
-  `(g (g| ~@(map #(if (seq? %) % (name %)) (cons kword kwords)))
-      (-skip (g! :kw-term))))
 
 ;; -------------------------
 ;; Extractors and Collectors
@@ -819,20 +705,25 @@ This parser backtracks upon failure."
   "Same as g| but return the result of the first successful form."
   [form & forms]
   (let [old-pos (gensym)]
-    `(let [~old-pos *cur-pos*]
-       (or ~@(map (fn [cur-form]
-		    `(or
-		      (<g 0 ~@(translate-form (list cur-form) true))
-                      (do (set! *cur-pos* ~old-pos)
-                          nil)))
-                  (cons form forms))))))
+    `(binding [*cut* false]
+       (let [~old-pos *cur-pos*]
+         (try
+           (or ~@(map (fn [cur-form]
+                        `(or
+                          (<g 0 ~@(translate-form (list cur-form) true))
+                          (if *cut*
+                            (throw (CutException.))
+                            (do (set! *cur-pos* ~old-pos)
+                                nil))))
+                      (cons form forms)))
+           (catch CutException e#
+             nil))))))
 
 (defmacro <g-
   "Same as g- but return the result of true-form or nil."
   [true-form false-form]
   `(when (g! ~false-form)
      (<g 0 ~true-form)))
-
 
 (defmacro <g_
   "Same as g_ except:
@@ -995,42 +886,37 @@ mth (exclusive) forms. Else, return the string matched by all forms."
           (when res#
             (subs *text-to-parse* start# *cur-pos*)))))))
 
+;; ---------------
 ;; Forward Parsers
+;; ---------------
+
+(defn- forward-parser-helper
+  "Return a similar body found in some of the forward parser marcros."
+  [let-sym parser-sym form forms+f]
+  `(~let-sym [res# (~parser-sym ~form ~@(butlast forms+f))]
+             (if (vector? res#)
+               (apply ~(last forms+f) res#)
+               (~(last forms+f) res#))))
 
 (defmacro >g
   [form & forms+f]
-  `(when-let [res# (<g ~form ~@(butlast forms+f))]
-     (if (vector? res#)
-       (apply ~(last forms+f) res#)
-       (~(last forms+f) res#))))
+  (forward-parser-helper 'when-let '<g form forms+f))
 
 (defmacro >g*
   [form & forms+f]
-  `(let [res# (<g* ~form ~@(butlast forms+f))]
-     (if (vector? res#)
-       (apply ~(last forms+f) res#)
-       (~(last forms+f) res#))))
+  (forward-parser-helper 'let '<g* form forms+f))
 
 (defmacro >g+
   [form & forms+f]
-  `(when-let [res# (<g+ ~form ~@(butlast forms+f))]
-     (if (vector? res#)
-       (apply ~(last forms+f) res#)
-       (~(last forms+f) res#))))
+  (forward-parser-helper 'when-let '<g+ form forms+f))
 
 (defmacro >g?
   [form & forms+f]
-  `(let [res# (<g? ~form ~@(butlast forms+f))]
-     (if (vector? res#)
-       (apply ~(last forms+f) res#)
-       (~(last forms+f) res#))))
+  (forward-parser-helper 'let '<g? form forms+f))
 
 (defmacro >g|
   [form & forms+f]
-  `(when-let [res# (<g| ~form ~@(butlast forms+f))]
-     (if (vector? res#)
-       (apply ~(last forms+f) res#)
-       (~(last forms+f) res#))))
+  (forward-parser-helper 'when-let '<g| form forms+f))
 
 (defmacro >g-
   [true-form false-form f]
@@ -1054,10 +940,7 @@ mth (exclusive) forms. Else, return the string matched by all forms."
 
 (defmacro >prm
   [form & forms+f]
-  `(when-let [res# (<prm ~form ~@(butlast forms+f))]
-     (if (vector? res#)
-       (apply ~(last forms+f) res#)
-       (~(last forms+f) res#))))
+  (forward-parser-helper 'when-let '<prm form forms+f))
 
 (defmacro >rep
   [min max form & forms+f]
@@ -1131,31 +1014,8 @@ next line pointing to the error position. m is the map returned from
 offset->line-number. Output is printed to the current value of *out*"
   [m]
   (let [spacing (apply str (repeat (:column m) " "))]
-    (println "\nParse Error: line" (:line m) (or (:hint m) ""))
+    (println "\nParse Error Hint: line" (:line m) (or (:hint m) ""))
     (printf "%s\n%s^\n\n" (:text m) spacing)))
-
-(defmacro awhen
-  "If x evaluates to non-nil call f with the result of that evaluation as its
-only argument, else return nil. This is like an anaphoric defined in Graham's
-\"On Lisp\" except 'it' is automagically gensym'ed.
-  (awhen true not)                 => false
-  (awhen (+ 2 2) (fn [x] (* x 2))) => 8
-  (awhen false (fn [x] ...))       => nil, and fn is not called
-It works best when used with clojures #() lambda syntax:
-  (awhen (some-parser-matched?) #(do-something-with-it %))
-The result of some-function does not have to be named but if it's nil, awhen
-returns nil and #() is not called"
-  [x f]
-  `(when-let [r# ~x]
-     (~f r#)))
-
-(defmacro aif
-  "If test evaluates to non-nil call then-fn with the result of that
-evaluation as its only argument, else evaluate else-form."
-  [test then-fn else-form]
-  `(if-let [r# ~test]
-     (~then-fn r#)
-     ~else-form))
 
 ;; ----------------
 ;; Grammar Creation
