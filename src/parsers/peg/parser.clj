@@ -2,8 +2,10 @@
 ;;;
 ;;; Friday, April  6 2012
 
+;; TODO: rewrite to use new <g >g parsers.
+
 (ns ^{:doc "PEG parser"}
-    ralik.parsers.peg.peg
+    parsers.peg.parser
     (:use ralik.core)
     ;; (:require [clojure.contrib.string :as string])
     ;; (:use [clojure.walk :only [postwalk]])
@@ -48,10 +50,14 @@ hand side. Peg operators and syntax are transformed:
   ;; x <- y
   (definition
     (let [id (atom nil)]
-      (g (reset! id (identifier))
-         "<-"
-         (awhen (expression)
-           #(vector @id %)))))
+      (>g (identifier) "<-" (expression)
+          #(vector %1 %3))))
+  ;; (definition
+  ;;   (let [id (atom nil)]
+  ;;     (g (reset! id (identifier))
+  ;;        "<-"
+  ;;        (awhen (expression)
+  ;;          #(vector @id %)))))
   ;; x / y
   (expression
    (let [res (atom [])]
@@ -65,41 +71,58 @@ hand side. Peg operators and syntax are transformed:
          (first @res)))))
   ;; x y z
   (peg-sequence
-   (let [res (atom [])]
-     (g+ (awhen (prefix)
-           #(swap! res (fn [x] (conj x %)))))
-     (if (next @res)
-       (seq @res)
-       (first @res))))
+   (>g+ (prefix)
+        #(let [s (flatten %&)]
+           (if (next s)
+             s
+             (first s)))))
   ;; !x
   (prefix
-   (let [op (atom nil)]
-     (g (g? (awhen (lex (g| \& \!))
-              #(reset! op (symbol (str "peg-" %)))))
-        (awhen (suffix)
-          #(if @op
-             (list @op %)
-             %)))))
+   (>g (<g? #"[&!]")
+       (suffix)
+       #(if (not= %1 :g?-failed)
+          (list (symbol (str "peg-" %1)) %2)
+          %2)))
+  ;; (prefix
+  ;;  (let [op (atom nil)]
+  ;;    (g (g? (awhen (lex (g| \& \!))
+  ;;             #(reset! op (symbol (str "peg-" %)))))
+  ;;       (awhen (suffix)
+  ;;         #(if @op
+  ;;            (list @op %)
+  ;;            %)))))
   ;; x*
   (suffix
-   (let [pri (atom nil)]
-     (g (reset! pri (primary))
-        (g? (awhen (lex (g| \? \* \+))
-              #(swap! pri (fn [x] (list (symbol (str "peg-" %)) x))))))
-     @pri))
+   (>g (primary)
+       (<g? #"[?*+]")
+       #(if (not= %2 :g?-failed)
+          (list (symbol (str "peg-" %2)) %1)
+          %1)))
+  ;; (suffix
+  ;;  (let [pri (atom nil)]
+  ;;    (g (reset! pri (primary))
+  ;;       (g? (awhen (lex (g| \? \* \+))
+  ;;             #(swap! pri (fn [x] (list (symbol (str "peg-" %)) x))))))
+  ;;    @pri))
   ;; 
   (primary
-   (let [ret (atom nil)]
-     (g| (g (awhen (identifier)
-              #(reset! ret
-                       (list 'peg-nt %))) (g! "<-") @ret)
-         (g \( (awhen (expression) #(reset! ret (list 'peg-g %))) \) @ret)
-         (literal)
-         (peg-char-class)
-         (g \. '_))))
+   (g| (identifier)
+       (g \( (expression) \))
+       (literal)
+       (peg-char-class)
+       (g \. '_)))
+  ;; (primary
+  ;;  (let [ret (atom nil)]
+  ;;    (g| (g (awhen (identifier)
+  ;;             #(reset! ret
+  ;;                      (list 'peg-nt %))) (g! "<-") @ret)
+  ;;        (g \( (awhen (expression) #(reset! ret (list 'peg-g %))) \) @ret)
+  ;;        (literal)
+  ;;        (peg-char-class)
+  ;;        (g \. '_))))
   ;; foo
   (identifier
-   (g (lex #"[a-zA-Z_][a-zA-Z0-9_]*")))
+   (<lex #"[a-zA-Z_][a-zA-Z0-9_]*"))
   ;; 'foo' or "foo" 
   (literal
    (let [ret (atom [])]

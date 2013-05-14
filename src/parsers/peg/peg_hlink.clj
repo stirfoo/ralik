@@ -5,7 +5,7 @@
 (ns ^{:doc "Write a PEG to html where rules are hyper linked.
 Usage: (hlink \"path/to/*.peg\" \"out-file-name\")
 The written html will use peg.css if available."}
-    ralik.parsers.peg.peg_hlink
+    parsers.peg.peg_hlink
     (:use ralik.parsers.peg.peg)
     ;; (:require [clojure.contrib.string :as string])
     ;; (:use [clojure.walk :only [postwalk]])

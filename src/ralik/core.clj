@@ -1,5 +1,93 @@
+;; TODO:
+;; 1. Parse error report doesn't handle lines longer than the term width.
+;;    Need to window the line of text.
+
 (ns ^{:doc "
-A Parsing Expression Grammar parsing parser to parse PEG parser... parser?"}
+A Parsing Expression Grammar parsing parser to parse PEG parser... parser?
+
+See: http://http://en.wikipedia.org/wiki/Parsing_expression_grammar
+
+This code may be useful to someone but it's been mostly an exercise in mental
+masturbation. =)
+
+See the JSON parser for a heavily commented parser that mixes parsing forms
+with semantic actions.
+
+Character Level Matchers
+  The skip function is called prior to matching.
+  * Literal string       \"foo\"
+      A single character will be translated into a character matcher.
+      \"x\" => \\x
+  * Literal char         \\x
+  * Regular Expression   #\"[+-]?[0-9]+\"
+
+Base PEG Parsers
+  The semantics of the return value are false or nil for failure, and anything
+  else for success with the exception of g* and g?. These parsers always
+  succeed. See each parsers documentation for usage.
+  g   group
+  g*  zero or more
+  g+  one or more
+  g|  ordered choice
+  g?  optional
+  g&  positive look ahead
+  g!  negative look ahead
+
+Extensions of the Base Parsers
+  The return semantics are the same as the basic PEG parsers.
+  g_     interspersed list, e.g. 1,2,3
+  rep    repeat, like regexp {M,}, {,N}, {M,N}
+  prm    permutation, match one or more in any order
+  g-     match one but not the other
+  -skip  skipping disable
+  +skip  skipping enabled
+  -case  ignore case when matching with a string or character
+  +case  don't ignore case
+
+Collector and Extractor Parsers
+  These parsers collect or extract parse results and return them. See their
+  documentation for usage.
+  <g <g* <g+ <g? <g| <g- <g_ <prm <rep <kw <kws <lex
+
+Forward Parsers
+  These parsers behave as the previous but instead of returning their result,
+  it is passed to a function in the tail of the form. The result of that
+  function is returned instead. See their documentation for usage.
+  >g >g* >g+ >g? >g| >g- >g_ >prm >rep >kw >kws >lex
+
+Atomic Parsers
+  A symbol or keyword can be defined as a parser. The parser is translated
+  into a function call at expansion time. Some built-in atomic parsers
+  follow.
+
+  eoi     match the end of input
+  _       match any character
+  wsp     match any (ASCII) white space character
+  blank   match a space or tab character
+  eol     match the end of line \n, \r, or \r\n
+
+  !       a pseudo cut operator
+
+  uint10  match a string of decimal digits, return an unsigned int
+  sint10  match as uint10 with an optional leading + or -, return a signed int
+  uint16  match a hex number with opt 0[xX] prefix, return an unsigned int
+  uint8   match a string of octal digits, return an unsigned int
+
+Skipping
+  Skipping is performed prior to each character level match. A basic skipper
+  (wsp-skipper) is supplied. It simply eats all white space characters.
+  defgrammar uses this skipper by default but another (or nil) can be
+  specified.
+
+Grammar Creation
+  The macro defgrammar produces a parser. The parser can be traced, memoized,
+  and profiled. Case matching can be specified as well as a skipper and
+  post-parse function. See defgrammar's documentation for usage.
+
+Utility
+  tparse and tparse2 can be used at the repl to test parsing expressions.
+
+"}
   ralik.core
   (:import [ralik RalikException CutException]))
 
@@ -18,9 +106,6 @@ A Parsing Expression Grammar parsing parser to parse PEG parser... parser?"}
 (def ^{:doc "Skip flag. If true *skipper* is called prior to matching.
 Initially unbound."}
   *skip?*)
-(def ^{:doc "Character case flag. If true, the case of characters and strings
-must match the input. Initially unbound."}
-  *match-char-case?*)
 (def ^{:doc "The function to compare two characters for equality. Should be
 bound to one of: char= or char-case= prior to calling any parsers.
 Initially unbound."}
@@ -37,7 +122,7 @@ the operator failed. Initially unbound."}
 Each key will be:
   ['rule-name position-before-rule-is-executed]
 Each associated value will be:
-  [parse-result position-after-rule-is-executed
+  [parse-result position-after-rule-is-executed]
 The result of the rule is cached regardless if it succeeds or not. Initially
 unbound."}
   *grammar-rule-cache*)
@@ -53,7 +138,7 @@ the form containing the !. Initially unbound."}
 ;; -------
 
 (def ^{:doc "Symbol -> [fn-name parser-code] map
-See: def-atomic-parser"}
+See: defatomic"}
   *atomic-parsers* (atom {}))
 
 ;; -----------
@@ -82,15 +167,15 @@ hinting as to why the parser failed. Return nil."
 ;; Atomic Parsers
 ;; --------------
 
-(defmacro def-atomic-parser 
+(defmacro defatomic 
   "Define a named parser that can be used without ().
 name can be an (unquoted) symbol or a keyword. It can be used as if it were
 defined with CL symbol-macrolet (No (foo) syntax required). name will simply
 be replaced by a fn call where the name of the fn is gensym'd at the time
-def-atomic-parser is called. body can be any code. The result of the last form
+defatomic is called. body can be any code. The result of the last form
 will be returned as the result of the parser.
 
-Atomic parser are only accessable within a ralik operator. ralik operators can
+Atomic parser are only accessible within a ralik operator. ralik operators can
 be used in body. Atomic parsers can include other atomic parsers in their
 body. Some built-in atomic parsers are eoi, _, eol, wsp, and blank."
   [name & body]
@@ -98,22 +183,22 @@ body. Some built-in atomic parsers are eoi, _, eol, wsp, and blank."
     `(swap! *atomic-parsers* assoc '~name [(gensym) '(do ~@body)])
     `(swap! *atomic-parsers* assoc '~name [(gensym) '~(first body)])))
 
-(def-atomic-parser :kw-term
+(defatomic :kw-term
   (match #"[A-Za-z0-9_]"))
 
-(def-atomic-parser eoi
+(defatomic eoi
   (skip)
   (= *cur-pos* *end-pos*))
 
 ;; match and return any character as long as not at the end of input
-(def-atomic-parser _
+(defatomic _
   (skip)
   (or (and (< *cur-pos* *end-pos*)
            (set! *cur-pos* (inc *cur-pos*))
            (.charAt *text-to-parse* (dec *cur-pos*)))
       (adv-err-pos "unexpected end of input")))
 
-(def-atomic-parser wsp
+(defatomic wsp
   (skip)
   (or (and (< *cur-pos* *end-pos*)
            (let [c (nth *text-to-parse* *cur-pos*)]
@@ -121,7 +206,7 @@ body. Some built-in atomic parsers are eoi, _, eol, wsp, and blank."
            (set! *cur-pos* (inc *cur-pos*)))
       (adv-err-pos "expected space, tab, newline, or cursor return")))
 
-(def-atomic-parser blank
+(defatomic blank
   (skip)
   (or (and (< *cur-pos* *end-pos*)
            (let [c (nth *text-to-parse* *cur-pos*)]
@@ -129,7 +214,7 @@ body. Some built-in atomic parsers are eoi, _, eol, wsp, and blank."
            (set! *cur-pos* (inc *cur-pos*)))
       (adv-err-pos "expected space or tab")))
 
-(def-atomic-parser eol
+(defatomic eol
   (skip)
   (or (and (< *cur-pos* *end-pos*)
            (or (and (= (nth *text-to-parse* *cur-pos*) ; dos
@@ -146,103 +231,44 @@ body. Some built-in atomic parsers are eoi, _, eol, wsp, and blank."
                     (set! *cur-pos* (inc *cur-pos*)))))
       (adv-err-pos "expected end of line")))
 
-(def-atomic-parser !
+(defatomic !
   (when-not (bound? #'*cut*)
     (throw (RalikException. (str "cut operator (!) must only occur within an"
                                  " alternate parser (g|, <g|, or >g|)\n"))))
   (set! *cut* true)
   :!-result)
 
-;; Java Integer subset, return an Integer
+;; Some Atomic Number parsers
+(defatomic ^{:doc "Match an unsigned decimal integer.
+Return an integer."}
+  uint10
+  (>lex #"\d+" Integer/parseInt))
 
-;; (def-atomic-parser uint8
-;;   (>lex #"0[0-7]+" #(Integer/parseInt % 8)))
+(defatomic ^{:doc "Match a decimal integer with OPTIONAL leading +/-.
+No space allowed in the token. Return an integer"}
+  sint10
+  (>lex #"[+-]?\d+"
+        (fn [x]
+          (println "+-int10" (first x))
+          (if (= (first x) \+)
+            (Integer/parseInt (subs x 1))
+            (Integer/parseInt x)))))
 
-;; (def-atomic-parser sint8
-;;   (>lex #"[+-]?0[0-7]+"
-;;         #(-> (if (= (.charAt % 0)
-;;                     \+)
-;;                (subs % 1)
-;;                %)
-;;              (Integer/parseInt 8))))
+(defatomic ^{:doc "Match an unsigned hexidecimal number with optional 0[xX]
+prefix. Return an integer."}
+  uint16
+  (>lex #"(O[xX])?[0-9a-fA-F]+"
+        (fn [x]
+          (if (some #{\x} x)
+            (Integer/parseInt (subs x 2) 16)
+            (Integer/parseInt x 16)))))
 
-;; (def-atomic-parser uint10
-;;   (>lex #"0|[1-9][0-9]*" Integer/parseInt))
-
-;; (def-atomic-parser sint10
-;;   (>lex #"[+-]?(0|[1-9][0-9]*)"
-;;         #(-> (if (= (.charAt % 0)
-;;                     \+)
-;;                (subs % 1) %)
-;;              Integer/parseInt)))
-
-;; (def-atomic-parser uint16
-;;   (>lex #"0x[a-zA-Z0-9][a-fA-F0-9]*"
-;;         #(Integer/parseInt (subs % 2) 16)))
-
-;; (def-atomic-parser sint16
-;;   (>lex #"[+-]?0x[a-zA-Z0-9][a-fA-F0-9]*"
-;;         #(-> (cond
-;;               (= (.charAt % 0) \+) (subs % 3)
-;;               (= (.charAt % 0) \-) (str \- (subs % 3))
-;;               :else (subs % 2))
-;;              (Integer/parseInt 16))))
-
-;; (def-atomic-parser uint
-;;   (g| uint8 uint16 uint10))
-
-;; (def-atomic-parser sint
-;;   (g| sint8 sint16 sint10))
-
-;; ;; Java floating point subset, return a Double
-
-;; (def-atomic-parser ufloat
-;;   (>lex #"(?x)((\d+\.\d*|\.\d+)([eE][+-]?\d+)?)
-;;              | \d+[eE][+-]?\d+"
-;;         #(Double/parseDouble %)))
-
-;; (def-atomic-parser sfloat
-;;   (>lex #"(?x)[+-]?(((\d+\.\d*|\.\d+)([eE][+-]?\d+)?)
-;;                     | \d+[eE][+-]?\d+)"
-;;         #(-> (if (= (.charAt % 0)
-;;                     \+)
-;;                (subs % 1)
-;;                %)
-;;              Double/parseDouble)))
-
-;; ;; integer or float, sign not allowed
-;; (def-atomic-parser unum
-;;   (g| ufloat uint16 uint8 uint10))
-
-;; ;; integer or float, optional [+-] allowed
-;; (def-atomic-parser snum
-;;   (g| sfloat sint16 sint8 sint10))
-
-;; ;; C/C++ identifier, return a string
-;; (def-atomic-parser cident
-;;   (lex #"[a-zA-Z_][a-zA-Z0-9_]*"))
-
-;; ;; Java Identifier, return a string
-;; (def-atomic-parser jident
-;;   (lex (>g 0 _ Character/isJavaIdentifierStart)
-;;         (g* (>g 0 _ Character/isJavaIdentifierPart))))
-
-;; ;; Java string literal
-;; (def-atomic-parser jstr
-;;   (skip)
-;;   (-skip
-;;    (<g 1
-;;        \"
-;;        (lex (g* (g| (g| (g \\ (g| \b \t \n \f \r \" \' \\))
-;;                         (awhen (lex (g \\ \u (rep 4 4 #"[0-9a-fA-F]")))
-;;                           #(let [c (char (Integer/parseInt (subs % 2) 16))]
-;;                              (if-not (#{\newline \return} c)
-;;                                c)))
-;;                         (g| #"\\[0-3][0-7][0-7]"
-;;                             #"\\[0-7][0-7]"
-;;                             #"\\[0-7]"))
-;;                     (g (g! (g| \\ \" "\n" "\r")) _))))
-;;        \")))
+(defatomic ^{:doc "Match an unsigned octal number. One or more octal digits,
+no prefix. Return an integer."}
+  uint8
+  (>lex #"[0-7]+"
+        (fn [x]
+          (Integer/parseInt x 8))))
 
 ;; ------------------
 ;; Low-Level Matchers
@@ -314,7 +340,7 @@ one of:
    (string? x) `(match-string ~x)
    (re-pattern? x) `(match-regexp ~x)
    ;; if x is found in *atomic-parsers*, insert a call to its gensym'd name
-   ;; that was created in def-atomic-parser, in its place.
+   ;; that was created in defatomic, in its place.
    (or (symbol? x) (keyword? x))
    (if-let [[name _] (x @*atomic-parsers*)]
      `(~name)
@@ -357,9 +383,13 @@ Return a list that the caller should splice into its body."
              (translate-form % (#{(first %)} *opset*)))
            ;; 
            (or (char? %)
-               (string? %)
                (re-pattern? %))
            (list 'match %)
+           ;;
+           (string? %)
+           (if (= (count %) 1)
+             (list 'match (first %))    ; (match \x), not (match "x")
+             (list 'match %))
            ;; 
            (and (or (keyword? %)
                     (symbol? %))
@@ -398,8 +428,7 @@ Return a list that the caller should splice into its body."
 not. Return the result of the last form in forms."
   [form & forms]
   (let [tforms (translate-form (cons form forms) true)]
-    `(binding [*match-char-case?* true
-               *char=* char-case=]
+    `(binding [*char=* char-case=]
        ~(if (> (count tforms) 1)
           `(and ~@tforms)
           (first tforms)))))
@@ -410,8 +439,7 @@ Character and string matchers are affected. Regular expressions are not.
 Return the result of the last form in forms."
   [form & forms]
   (let [tforms (translate-form (cons form forms) true)]
-    `(binding [*match-char-case?* false
-               *char=* char=]
+    `(binding [*char=* char=]
        ~(if (> (count tforms) 1)
           `(and ~@tforms)
           (first tforms)))))
@@ -477,7 +505,7 @@ value will show if forms actually matched or not.
   ;; Has to backtrack because non-nil is always returned. if translate-form
   ;; was used instead, an enclosing parser that may backtrack has no way of
   ;; knowing if this failed. All parsers only know nil or false as failure,
-  ;; and anything else as success
+  ;; and anything else as success.
   `(if-let [res# (maybe-backtrack ~(cons form forms))]
      res#
      :g?-failed))
@@ -573,9 +601,14 @@ hold. If max is 0, rep will be a no-op, but still succeed."
              (= ~max 0))))
      (throw (RalikException. (str "rep: (<= 0 min max) failed")))))
 
-;; -------------------------
+;; -------------------------------------------------------------------------
 ;; Extractors and Collectors
-;; -------------------------
+;;
+;; The result of a parser is selected and returned in various ways. The
+;; character `<' is prefixed to basic parsers, <g, <g*, etc.
+;; -------------------------------------------------------------------------
+
+;; Helpers
 
 (defn- collect-nth-form
   "Helper to wrap forms in code that will return the nth form's result.
@@ -615,6 +648,8 @@ Return a list."
                      x))
          forms
          (iterate inc 0))))
+
+;; Parsers
 
 (defmacro <g
   "Same as g but return the result of forms.
@@ -692,7 +727,7 @@ If form in an integer return the result of the nth form.
 If form is the vector [n,m], return the result of the nth (inclusive) to
 mth (exclusive) form as a vector.
 Else, return the result of all forms as a vector.
-If forms fail, reutrn :g?-failed.
+If forms fail, return :g?-failed.
 This parser backtracks upon failure."
   [form & forms]
   `(let [old-pos# *cur-pos*]
@@ -727,7 +762,7 @@ This parser backtracks upon failure."
 
 (defmacro <g_
   "Same as g_ except:
-If i is not supplied, reuturn [form [separator form] [separator form] ...]
+If i is not supplied, return [form [separator form] [separator form] ...]
 If i is 0, return [form form ...]
 if i is 1, return [separator separator ...]. separatorS will only be conj'd if
 followed by a successful form."
@@ -755,8 +790,8 @@ followed by a successful form."
 (defmacro <prm
   "Same as prm but return a vector of each successive match of form."
   [form & forms]
-  ;; this letfn prevents forms from being expanded twice
   `(let [col# (atom [])]
+     ;; this letfn prevents forms from being expanded twice     
      (letfn [(f# [] (<g| ~form ~@forms))]
        (when-let [res# (f#)]
          (swap! col# conj res#)
@@ -791,7 +826,10 @@ string name will be used to match. The atomic parser :kw-term is used to
 define the code that matches characters that cannot IMMEDIATELY follow the
 keyword. This is generally the set of characters that define a valid keyword
 for your domain.
- (:kw-term @*atomic-parsers*) to see the current value"
+
+ (<kw :foo) will not match \"foobar\".
+
+ (:kw-term @*atomic-parsers*) to see its current value"
   [kword]
   `(<g 0 ~(name kword) (-skip (g! :kw-term))))
 
@@ -799,9 +837,10 @@ for your domain.
   "Return the first keyword that matches as a string or nil if no match.
 This behaves as <kw except no optional return values can be supplied."
   [kword & kwords]
-  `(<g 0
-       (<g| ~(name kword) ~@(map name kwords))
-       (-skip (g! :kw-term))))
+  `(<g| (<g 0 ~(name kword) (-skip (g! :kw-term)))
+        ~@(map (fn [x]
+                 `(<g 0 ~(name x) (-skip (g! :kw-term))))
+               kwords)))
 
 (defn- lex-nth-form
   "Helper to wrap forms in code that will set the start (inclusive) and
@@ -886,12 +925,16 @@ mth (exclusive) forms. Else, return the string matched by all forms."
           (when res#
             (subs *text-to-parse* start# *cur-pos*)))))))
 
-;; ---------------
-;; Forward Parsers
-;; ---------------
+;; ---------------------------------------------------------------------------
+;; Forward Parsers (glorified anaphorics)
+;;
+;; The result of a successful parse is passed to the function at the tail of
+;; the parsers argument list. The result of this fn is returned. The character
+;; `>' is prefixed to basic parsers, >g, >g*, etc.
+;; ---------------------------------------------------------------------------
 
 (defn- forward-parser-helper
-  "Return a similar body found in some of the forward parser marcros."
+  "Return a similar body found in some of the forward parser macros."
   [let-sym parser-sym form forms+f]
   `(~let-sym [res# (~parser-sym ~form ~@(butlast forms+f))]
              (if (vector? res#)
@@ -976,8 +1019,6 @@ Always returns a non-nil value"
               (and (some #{(nth *text-to-parse* *cur-pos*)}
                          [\space \newline \return \tab \formfeed])
                    (set! *cur-pos* (inc *cur-pos*)))))
-  ;; skippers never fail, but they could throw on,
-  ;; for instance, invalid comment nesting
   true)
 
 (defn offset->line-number
@@ -1014,7 +1055,9 @@ next line pointing to the error position. m is the map returned from
 offset->line-number. Output is printed to the current value of *out*"
   [m]
   (let [spacing (apply str (repeat (:column m) " "))]
-    (println "\nParse Error Hint: line" (:line m) (or (:hint m) ""))
+    ;; the hint is crap
+    ;; (println "\nParse Error Hint: line" (:line m) (or (:hint m) ""))
+    (println "\nParse Error line" (:line m))
     (printf "%s\n%s^\n\n" (:text m) spacing)))
 
 ;; ----------------
@@ -1101,27 +1144,30 @@ this accumulated info. Return the result of the rule."
 				     3 (count (name '~fn-name)))))))
          (flush))
        (set! *trace-depth* (- *trace-depth* *trace-indent*))
-       
        result#)))
 
 (defn- memoize-rule
-  "Wrap the body of a (quoted) rule in code that caches the rule's
-result. This is called at expansion time."
+  "Wrap the body of a (quoted) rule in code that caches the rule's result.
+
+Each cache map key is: [position-before-parse rule-name].
+Each value is: [parse-result position-after-parse]"
   [rule memoize?]
   (if memoize?
+    ;; cache the result
     (let [rule-name (first rule)]
       `(~rule-name
-	~(second rule)			; arg list
+	~(second rule)          ; ARG-RULE will ensure this is always a vector
 	(if-let [[cached-result# pos#]
 		 (get @*grammar-rule-cache* ['~rule-name *cur-pos*])]
 	  ;; return the cached result
 	  (do (set! *cur-pos* pos#) cached-result#)
 	  ;; else parse and cache the result
-	  (let [cp# *cur-pos* parse-result# (do ~@(nnext rule))]
-	    (swap! *grammar-rule-cache* assoc ['~rule-name cp#]
-		   [parse-result# *cur-pos*])
+	  (let [cp# *cur-pos*
+                parse-result# (do ~@(nnext rule))]
+	    (swap! *grammar-rule-cache*
+                   assoc ['~rule-name cp#] [parse-result# *cur-pos*])
 	    parse-result#))))
-    ;; rule passes through untouched
+    ;; else rule passes through untouched
     rule))
 
 (defn- trace-rule
@@ -1164,10 +1210,106 @@ checked."
     ;; any left over are orphans
     (seq @name-set)))
 
+(defn- chk-grammar-args
+  "Perform defgrammar argument checks"
+  [name doc-string key-args rule rules start-rule]
+  (if-let [bad-key (loop [ks (keys key-args)]
+                     (if (nil? ks)
+                       nil
+                       (if (some #{(first ks)} [:skipper :start-rule
+                                                :match-case? :print-err?
+						:memoize? :trace? :inherit?
+						:profile? :ppfn])
+                         (recur (next ks))
+                         (first ks))))]
+    (throw (RalikException.
+            (str "unknown defgrammar key argument: " bad-key))))
+  (when-not (symbol? name)
+    (throw (RalikException.
+            (str "defgrammar name must be a symbol, got " name))))
+  (when-not (string? doc-string)
+    (throw (RalikException.
+            (str "defgrammar doc-string must be a string, got "
+                 doc-string))))
+  (when (not-any? #{start-rule} (map first (list* rule rules)))
+    (throw (RalikException.
+            (format "start-rule `%s' not found in grammar `%s'"
+                    start-rule name))))
+  ;; warn about unreferenced rules
+  (when-let [orphans (find-orphaned-rules (conj rules rule) start-rule)]
+    (printf
+     "WARNING: These rules are not referenced in the grammar `%s':\n" name)
+    (apply print orphans)
+    (println) (flush)))
+
+(defn- emit-inherited-grammar
+  "defgrammar helper to emit an inherited grammar as a function"
+  [name doc-string skipper start-rule match-case? print-err? memoize?
+   trace? profile? rule rules]
+  `(defn ~name
+     ~doc-string
+     []
+     (letfn [~@(map (fn [r]
+                      (defgrammar-helper r (and memoize?
+                                                (not= (first r)
+                                                      start-rule))
+                        trace? profile?))
+                 (conj rules rule))
+             ;; expand all atomic parser code
+             ~@(for [[_ [name code]] @*atomic-parsers*]
+                 `(~name [] ~code))]
+       (~start-rule))))
+
+(defn- emit-grammar
+  "defgrammar helper to emit a grammar as a function"
+  [name doc-string skipper start-rule match-case? print-err? memoize?
+   trace? profile? ppfn rule rules]
+  `(defn ~name
+     ~doc-string
+     [text#]
+     (binding [*text-to-parse* text#,
+               *cur-pos* 0,
+               *err-pos* 0,
+               *err-msg* "",
+               *end-pos* (count text#),
+               *skipper* ~skipper,
+               *skip?* ~(and skipper true),
+               *char=* ~(if match-case?
+                          'char-case=
+                          'char=)
+               *grammar-rule-cache* (atom {})
+               *trace-depth* -1
+               *trace-indent* 1
+               *rule-profile-map* (atom {})]
+       (letfn [~@(map #(defgrammar-helper % (and memoize?
+                                                 (not= (first %)
+                                                       start-rule))
+                         trace? profile?)
+                   (conj rules rule))
+               ;; Expand atomic parsers to local fns so they no longer have
+               ;; to be expanded at each point in the grammar.  This will
+               ;; allow the body of defatomic to freely use ralik
+               ;; core parsers instead of low-level character parsers. The
+               ;; atomic parsers body will only be expanded once, in the
+               ;; function body.
+               ;; TODO: better way to handle :kw-term
+               ~@(for [[_ [name code]] @*atomic-parsers*]
+                   `(~name [] ~code))]
+         (if-let [result# (~start-rule)]
+           (do
+             (when ~profile?
+               (print-profile-info))
+             (~ppfn result#))
+           (when ~print-err?
+             (spep (assoc (offset->line-number *err-pos* *text-to-parse*)
+                     :hint *err-msg*))))))))
+
+;; TODO: Allow start-rule selection at run time.
+;;       RESOLVE will not work with functions defined with LETFN.
 (defmacro defgrammar
-  "Expand to the function `name' that expects or or two arguments: a string of
-the text to parse and an optional start rule. doc-string is not optional. The
-third argument must be a possibly empty vector of key val pairs:
+  "Expand to the function `name' that expects one argument: a string of the
+text to parse. doc-string is not optional. The third argument must be a
+possibly empty vector of key val pairs:
 
 .--------------+-------------------------------------------------------------.
 |     key      |                          val                                |
@@ -1198,6 +1340,10 @@ third argument must be a possibly empty vector of key val pairs:
 |              | text to parse. All other keys are ignored if :inherit? is   |
 |              | true.                                                       |
 |              | Default: false                                              |
+| :ppfn        | Post Parse Function. Call this function on a successful     |
+|              | parse with the parse result as its only argument. The       |
+|              | result of this fn will be the result of the parser.         |
+|              | Default: identity                                           |
 `--------------+-------------------------------------------------------------'
     
 The rules are defined as if they were functions in a letfn form with one
@@ -1217,125 +1363,50 @@ failure.
 
 Example:
 
-  (defgrammar parse-infix
-    \"Syntax check an algebraic infix expressions\"
+  (defgrammar infix-expr
+    \"Syntax check an algebraic infix expressions.
+      This doc string is required\"
     [:start-rule expr :print-err? true]
     (expr (g (sum-expr) eoi))
     (sum-expr (g (mul-expr) (g* #\"[+-]\" (mul-expr))))
     (mul-expr (g (pow-expr) (g* #\"[*/%]\" (pow-expr))))
     (uny-expr (g| (g #\"[+-]\" (uny-expr))
-                   (pow-expr)))
+                  (pow-expr)))
     (pow-expr (g (primary) (g? \"**\" (uny-expr))))
     (primary (g| (number)
-                  (variable)
-                  (g \\( (sum-expr) \\))
-                  (g \\[ (sum-expr) \\])))
-    (number (g #\"[\\d]+\"))
+                 (variable)
+                 (g \\( (sum-expr) \\))
+                 (g \\[ (sum-expr) \\])))
+    (number (g #\"\\d+\"))
     (variable (g #\"[a-z]\")))
 
-  (parse-infix \"4*[2*a*(a+3)+6*(4-a)]+5*a**2\")  => true
-  (parse-infix \"4*[2*a*(a[+3)+6*(4-a)]+5*a**2\") => indicate the stray ["
+  (infix-expr \"4*[2*a*(a+3)+6*(4-a)]+5*a**2\")  => true
+  (infix-expr \"4*[2*a*(a[+3)+6*(4-a)]+5*a**2\") => indicate the stray ["
   [name doc-string
    [& {:keys [skipper start-rule match-case? print-err? memoize? trace?
-	      inherit? profile?]
+	      inherit? profile? ppfn]
        :as key-args
        :or {skipper 'wsp-skipper, start-rule 'start, match-case? false,
-	    memoize? false, trace? false, inherit? false, profile? false}}]
+	    memoize? false, trace? false, inherit? false, profile? false,
+            ppfn identity}}]
    rule & rules]
   ;; some error handling
-  (if-let [bad-key (loop [ks (keys key-args)]
-                     (if (nil? ks)
-                       nil
-                       (if (some #{(first ks)} [:skipper :start-rule
-                                                :match-case? :print-err?
-						:memoize? :trace? :inherit?
-						:profile?])
-                         (recur (next ks))
-                         (first ks))))]
-    (throw (RalikException.
-            (str "unknown defgrammar key argument: " bad-key))))
-  (when-not (symbol? name)
-    (throw (RalikException.
-            (str "defgrammar name must be a symbol, got " name))))
-  (when-not (string? doc-string)
-    (throw (RalikException.
-            (str "defgrammar doc-string must be a string, got "
-                            doc-string))))
-  (when (not-any? #{start-rule} (map first (list* rule rules)))
-    (throw (RalikException.
-            (format "start-rule `%s' not found in grammar `%s'"
-                    start-rule name))))
-  ;; warn about unreferenced rules
-  (when-let [orphans (find-orphaned-rules (conj rules rule) start-rule)]
-    (printf
-     "WARNING: These rules are not referenced in the grammar `%s':\n" name)
-    (apply print orphans)
-    (println) (flush))
-  ;; code
+  (chk-grammar-args name doc-string key-args rule rules start-rule)
+  ;; emit code
   (if inherit?
-    `(defn ~name
-       ~doc-string
-       []
-       (letfn [~@(map (fn [r]
-                        (defgrammar-helper r (and memoize?
-						  (not= (first r)
-							start-rule))
-			  trace? profile?))
-                   (conj rules rule))
-               ;; expand all atomic parser code
-               ~@(for [[_ [name code]] @*atomic-parsers*]
-                   `(~name [] ~code))]
-         (~start-rule)))
-    `(defn ~name
-       ~doc-string
-       [text#]
-       (binding [*text-to-parse* text#,
-                 *cur-pos* 0,
-                 *err-pos* 0,
-                 *err-msg* "",
-                 *end-pos* (count text#),
-                 *skipper* ~skipper,
-                 *skip?* ~(and skipper true),
-                 *match-char-case?* ~match-case?,
-                 *char=* ~(if match-case?
-                            'char-case=
-                            'char=)
-		 *grammar-rule-cache* (atom {})
-		 *trace-depth* -2
-		 *trace-indent* 2
-		 *rule-profile-map* (atom {})]
-         (letfn [~@(map #(defgrammar-helper % (and memoize?
-						   (not= (first %)
-							 start-rule))
-			   trace? profile?)
-                     (conj rules rule))
-                 ;; Expand atomic parsers to local fns so they no longer have
-                 ;; to be expanded at each point in the grammar.  This will
-                 ;; allow the body of def-atomic-parser to freely use ralik
-                 ;; core parsers instead of low-level character parsers. The
-                 ;; atomic parsers body will only be expanded once, in the
-                 ;; function body.
-                 ;; TODO: better way to handle :kw-term
-                 ~@(for [[_ [name code]] @*atomic-parsers*]
-                     `(~name [] ~code))]
-           (if-let [result# (~start-rule)]
-	     (do
-	       (when ~profile?
-		 (print-profile-info))
-	       result#)
-             (when ~print-err?
-               (spep (assoc (offset->line-number *err-pos* *text-to-parse*)
-                       :hint *err-msg*)))))))))
+    (emit-inherited-grammar name doc-string skipper start-rule match-case?
+                            print-err? memoize? trace? profile? rule rules)
+    (emit-grammar name doc-string skipper start-rule match-case? print-err?
+                  memoize? trace? profile? ppfn rule rules)))
 
 ;; -----------
 ;; Testing Foo
 ;; -----------
 
-(defmacro parse
-  "Parse text with forms. Return non-nil on successful parse. or print a parse
-error message and return nil. forms is in an implied (g ...). Skipping is
-enabled and performed with the fn wsp-skipper. This is a testing utility for
-use at the repl."
+(defmacro tparse
+  "Test parser. Parse text with forms. Return non-nil on successful parse. or
+print a parse error message and return nil. forms is in an implied (g ...).
+Skipping is enabled and performed with the fn wsp-skipper."
   [text & forms]
   `(binding [*cur-pos* 0                ; position in *text-to-parse*
              *text-to-parse* ~text      ; string to parse
@@ -1344,7 +1415,6 @@ use at the repl."
              *err-msg* "no idea"        ; parse error hint
              *skipper* wsp-skipper      ; function to skip
              *skip?* true               ; O_o
-             *match-char-case?* false   ; ignore case
              *char=* char=]             ; use case-insensitive fn
      (letfn [(go# []
                (and ~@(translate-form forms true)))
@@ -1355,8 +1425,8 @@ use at the repl."
          (spep (merge (offset->line-number *err-pos* *text-to-parse*)
                       {:hint *err-msg*}))))))
 
-(defmacro parse2
-  "Parse text with forms. Return non-nil on successful parse.
+(defmacro tparse2
+  "Test parser. Parse text with forms. Return non-nil on successful parse.
  message and return nil. forms are in an implied (g ...). Skipping is enabled
 and performed with the fn wsp-skipper.
 
@@ -1370,7 +1440,6 @@ an error message on failure."
              *err-msg* "no idea"        ; parse error hint
              *skipper* wsp-skipper      ; function to skip
              *skip?* true               ; O_o
-             *match-char-case?* false   ; ignore case
              *char=* char=]             ; use case-insensitive fn
      (letfn [(go# []
                (and ~@(translate-form forms true)))

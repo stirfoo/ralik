@@ -1,0 +1,12 @@
+MODULE Foo;
+
+    VAR x: RECORD y, z: INTEGER;
+        a: ARRAY 3 OF ARRAY 3 OF ARRAY 3 OF FLOAT
+	END;
+             
+    BEGIN
+      x.y := 42;
+      x.z := 99;
+      Print(a[0][0][0]);
+	
+END Foo.
