@@ -126,7 +126,7 @@ Rule names are not munged to keep them from colliding with clojure names.
 
 Return nil."
   [in-file out-file grammar-name start-rule]
-  (when-let [rules (peg-symantic (slurp in-file))]
+  (when-let [rules (peg (slurp in-file))]
     (spit out-file
           (with-out-str
             (pprint '(ns "NAMESPACE"
