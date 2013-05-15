@@ -89,7 +89,9 @@ empty string as a match."
                                                x))
                                            %&))
                            "]\""))))
-  (Range (<g| (>g (Char) "-" (Char) #(apply str %&))
+  (Range (<g| (>g (Char) "-" (g! "]") (Char)
+                  #(let [[c1 _ _ c2] %&]
+                     (str c1 \- c2)))
               (>g 0 (Char) str)))
   (Char (<g| (>g 1 "\\" #"[nrt'\"\[\]\\]" {"n" \newline
                                            "r" \return
@@ -115,7 +117,7 @@ empty string as a match."
   (DOT (>g "." (Spacing) (constantly '_)))
 
   (Spacing (g* (g| (Space) (Comment))))
-  (Comment (g "#" (g* (g! (EndOfLine)) _) (EndOfLine)))
+  (Comment (g "#" (g* (g! (EndOfLine)) _)))
   (Space (g| " " "\t" (EndOfLine)))
   (EndOfLine (g| "\r\n" "\n" "\r"))
   (EndOfFile (g! _)))

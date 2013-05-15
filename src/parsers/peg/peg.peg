@@ -1,5 +1,9 @@
 # Parsing Expression Grammar definition from:
 # Parsing Expression Grammars: A Recognition-Based Syntactic Foundation
+# 
+# Alterations from the original:
+# [1] Comment production
+# [2] Range production
 
 # Hierarchical syntax
 Grammar     <- Spacing Definition+ EndOfFile
@@ -21,7 +25,9 @@ IdentCont   <- IdentStart / [0-9]
 Literal     <- ['] (!['] Char)* ['] Spacing
              / ["] (!["] Char)* ["] Spacing
 Class       <- '[' (!']' Range)* ']' Spacing
-Range       <- Char '-' Char / Char
+# [2] The added !']' will allow a hyphen at the end of a Class [a-].
+#     This is standard in most re engines.
+Range       <- Char '-' !']' Char / Char
 Char        <- '\\' [nrt'\"\[\]\\]
              / '\\' [0-2][0-7][0-7]
              / '\\' [0-7][0-7]?
@@ -39,9 +45,11 @@ CLOSE       <- ')' Spacing
 DOT         <- '.' Spacing
 
 Spacing     <- (Space / Comment)*
-Comment     <- '#' (!EndOfLine .)* EndOfLine
+# [1] This won't work if the comment is at the end of the input.
+#     Comment     <- '#' (!EndOfLine .)* EndOfLine
+#     This altered rule will stop consuming *if* EndOfLine is true *or*
+#     . fails. !EndOfLine will not consume, but the calling Spacing will.
+Comment     <- '#' (!EndOfLine .)*
 Space       <- ' ' / '\t' / EndOfLine
 EndOfLine   <- '\r\n' / '\n' / '\r'
 EndOfFile   <- !.
-
-
