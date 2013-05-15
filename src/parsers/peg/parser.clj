@@ -26,6 +26,7 @@ parser will insert an empty string. This will consume no input and return the
 empty string as a match."
   [:start-rule Grammar
    :skipper nil                         ; the grammar handles the whitespace
+   :profile? false
    :trace? false
    :print-err? true
    :ppfn identity]
@@ -52,7 +53,10 @@ empty string as a match."
               #(let [[op p] %&]
                  (if (= op :g?-failed)
                    p
-                   (list (symbol (str "g" (first op))) p)))))
+                   (if (and (seq? p)    ; unnest g parsers
+                            (= (first p) 'g))
+                     (list* (symbol (str "g" (first op))) (next p))
+                     (list (symbol (str "g" (first op))) p))))))
   (Suffix (>g (Primary) (<g? (<g| (QUESTION) (STAR) (PLUS)))
               #(let [[p op] %&]
                  (if (= op :g?-failed)
