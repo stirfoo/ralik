@@ -28,6 +28,7 @@ empty string as a match."
    :skipper nil                         ; the grammar handles the whitespace
    :profile? false
    :trace? false
+   :memoize? true
    :print-err? true
    :ppfn identity]
   ;; Hierarchical syntax
@@ -78,32 +79,34 @@ empty string as a match."
   (IdentStart (<g 0 #"[a-zA-Z_]"))
   (IdentCont (<g| (IdentStart)
                   #"[0-9]"))
-  (Literal (>g| (<g 1 "'" (<g* 1 (g! "'") (Char)) "'" (Spacing))
-                (<g 1 \" (<g* 1 (g! \") (Char)) \" (Spacing))
-                #(apply str %&)))
+  (Literal (>g| (<g 1 "'" (<g* 1 (g! "'") (Char :lit)) "'" (Spacing))
+                (<g 1 \" (<g* 1 (g! \") (Char :lit)) \" (Spacing))
+                #(symbol (str "\"" (apply str %&) "\""))))
   (Class (>g 1 "[" (<g* 1 (g! "]") (Range)) "]" (Spacing)
-             #(symbol (str "#\"["
-                           (apply str (map (fn [x]
-                                             (if (some #{\" \] \[ \\} x)
-                                               (str \\ x)
-                                               x))
-                                           %&))
-                           "]\""))))
+             #(symbol (str "#\"[" (apply str %&) "]\""))))
   (Range (<g| (>g (Char) "-" (g! "]") (Char)
                   #(let [[c1 _ _ c2] %&]
                      (str c1 \- c2)))
               (>g 0 (Char) str)))
-  (Char (<g| (>g 1 "\\" #"[nrt'\"\[\]\\]" {"n" \newline
-                                           "r" \return
-                                           "t" \tab
-                                           "'" \'
-                                           "\"" \"
-                                           "[" \[
-                                           "]" \]
-                                           "\\" \\})
-             (>g 1 "\\" #"[0-2][0-7][0-7]" #(char (Integer/parseInt % 8)))
-             (>g 1 "\\" #"[0-7][0-7]?" #(char (Integer/parseInt % 8)))
-             (<g 1 (g! "\\") _)))
+  (Char
+   [& for-lit]
+   (<g| (>g 1 "\\" #"[nrft'\"\[\]\\]" {"n" "\\n"
+                                       "r" "\\r"
+                                       "t" "\\t"
+                                       "f" "\\f"
+                                       "'" "'"
+                                       "\"" "\\\""
+                                       "[" (if (empty? for-lit) "\\[" "[")
+                                       "]" (if (empty? for-lit) "\\]" "]")
+                                       "\\" "\\\\"})
+        (>g 1 "\\" #"[0-2][0-7][0-7]" #(format "\\u%04x"
+                                               (Integer/parseInt % 8)))
+        (>g 1 "\\" #"[0-7][0-7]?" #(format "\\u%04x"
+                                           (Integer/parseInt % 8)))
+        (>g 1 (g! "\\") _ #(if (= % \")
+                             ;;  for ["] 
+                             "\\\""
+                             (str %)))))
 
   (LEFTARROW (g "<-" (Spacing)))
   (SLASH (g "/" (Spacing)))
@@ -140,8 +143,15 @@ Return nil."
                        (:import [ralik RalikException])))
             (println)
             (pprint (list* 'defgrammar
+                           (symbol (name grammar-name))
                            ;; TODO: full path to infile
                            (str "Auto-generated grammar from " in-file)
-                           (symbol (name grammar-name))
-                           [:start-rule (symbol (name start-rule))]
+                           [:start-rule (symbol (name start-rule))
+                            :skipper nil
+                            :match-case? true
+                            :print-err? true
+                            :trace? false
+                            :profile? false
+                            :memoize? false
+                            :ppfn 'identity]
                            rules))))))

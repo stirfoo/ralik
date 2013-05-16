@@ -4,6 +4,7 @@
 # Alterations from the original:
 # [1] Comment production
 # [2] Range production
+# [3] Char production
 
 # Hierarchical syntax
 Grammar     <- Spacing Definition+ EndOfFile
@@ -28,7 +29,8 @@ Class       <- '[' (!']' Range)* ']' Spacing
 # [2] The added !']' will allow a hyphen at the end of a Class [a-].
 #     This is standard in most re engines.
 Range       <- Char '-' !']' Char / Char
-Char        <- '\\' [nrt'\"\[\]\\]
+# [3] Added formfeed to permitted escape characters
+Char        <- '\\' [nrtf'\"\[\]\\]
              / '\\' [0-2][0-7][0-7]
              / '\\' [0-7][0-7]?
              / !'\\' .
