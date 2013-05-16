@@ -44,10 +44,7 @@ this.
    (<g 1 "i" (SInt) "e"))
   ;; 
   (BBytestring
-   (>g 0 uint10 ":"
-       #(>rep % % _
-              (fn [& chars]
-                (apply str (flatten chars))))))
+   (>g 0 uint10 ":" #(<lex (rep % % _))))
   ;; 
   (BList
    (>g 1 "l" (<g* 0 (BValue)) "e"
