@@ -89,36 +89,46 @@ Utility
 
 "}
   ralik.core
+  (:use [clojure.set])
   (:import [ralik RalikException CutException]))
 
 ;; ------------
 ;; Dynamic Vars
 ;; ------------
 
-(def ^{:doc "The string being parsed. Initially unbound."}
+(def ^{:dynamic true
+       :doc "The string being parsed. Initially unbound."}
   *text-to-parse*)
-(def ^{:doc "The current parse position. Initially unbound."}
+(def ^{:dynamic true
+       :doc "The current parse position. Initially unbound."}
   *cur-pos*)
-(def ^{:doc "The character count of *text-to-parse*. Initially unbound."}
+(def ^{:dynamic true
+       :doc "The character count of *text-to-parse*. Initially unbound."}
   *end-pos*)
-(def ^{:doc "The function to perform skipping. Initially unbound."}
+(def ^{:dynamic true
+       :doc "The function to perform skipping. Initially unbound."}
   *skipper*)
-(def ^{:doc "Skip flag. If true *skipper* is called prior to matching.
+(def ^{:dynamic true
+       :doc "Skip flag. If true *skipper* is called prior to matching.
 Initially unbound."}
   *skip?*)
-(def ^{:doc "The function to compare two characters for equality. Should be
+(def ^{:dynamic true
+       :doc "The function to compare two characters for equality. Should be
 bound to one of: char= or char-case= prior to calling any parsers.
 Initially unbound."}
   *char=*)
-(def ^{:doc "The greatest char pos in *text-to-parse* where a parser failed.
+(def ^{:dynamic true
+       :doc "The greatest char pos in *text-to-parse* where a parser failed.
 *cur-pos* cannot be used as it's constantly being reset when the parser
 backtracks. If a parse operator fails, it check if *cur-pos* > *err-pos*. If
 so, *err-pos* is set the value of *cur-pos*. Initially unbound."}
   *err-pos*)
-(def ^{:doc "A very short string giving a (possibly erroneous) hint as to why
+(def ^{:dynamic true
+       :doc "A very short string giving a (possibly erroneous) hint as to why
 the operator failed. Initially unbound."}
   *err-msg*)
-(def ^{:doc "The map to use when a grammar's :memoize? key is true.
+(def ^{:dynamic true
+       :doc "The map to use when a grammar's :memoize? key is true.
 Each key will be:
   ['rule-name position-before-rule-is-executed]
 Each associated value will be:
@@ -126,7 +136,8 @@ Each associated value will be:
 The result of the rule is cached regardless if it succeeds or not. Initially
 unbound."}
   *grammar-rule-cache*)
-(def ^{:doc "For Pseudo-cut operations. This gets bound to false upon entry
+(def ^{:dynamic true
+       :doc "For Pseudo-cut operations. This gets bound to false upon entry
 into an alternative (g| <g| >g|) parser. A subsequent ! within one of these
 parsers will set this var to true. The alternate parser will not try any more
 alternatives. Additionally, *cur-pos* will not be reset to the beginning of
@@ -139,7 +150,7 @@ the form containing the !. Initially unbound."}
 
 (def ^{:doc "Symbol -> [fn-name parser-code] map
 See: defatomic"}
-  *atomic-parsers* (atom {}))
+  atomic-parsers (atom {}))
 
 ;; -----------
 ;; odds & ends
@@ -180,8 +191,8 @@ be used in body. Atomic parsers can include other atomic parsers in their
 body. Some built-in atomic parsers are eoi, _, eol, wsp, and blank."
   [name & body]
   (if (> (count body) 1)
-    `(swap! *atomic-parsers* assoc '~name [(gensym) '(do ~@body)])
-    `(swap! *atomic-parsers* assoc '~name [(gensym) '~(first body)])))
+    `(swap! atomic-parsers assoc '~name [(gensym) '(do ~@body)])
+    `(swap! atomic-parsers assoc '~name [(gensym) '~(first body)])))
 
 (defatomic :kw-term
   (match #"[A-Za-z0-9_]"))
@@ -333,19 +344,19 @@ one of:
   * literal character
   * literal string
   * java.util.regex.Pattern instance
-  * a symbol or keyword found in *atomic-parsers*"
+  * a symbol or keyword found in atomic-parsers"
   [x]
   (cond
    (char? x) `(match-char ~x)
    (string? x) `(match-string ~x)
    (re-pattern? x) `(match-regexp ~x)
-   ;; if x is found in *atomic-parsers*, insert a call to its gensym'd name
+   ;; if x is found in atomic-parsers, insert a call to its gensym'd name
    ;; that was created in defatomic, in its place.
    (or (symbol? x) (keyword? x))
-   (if-let [[name _] (x @*atomic-parsers*)]
+   (if-let [[name _] (x @atomic-parsers)]
      `(~name)
      (throw (RalikException. (str "match: symbol not found in"
-                                  " *atomic-parsers*: " x))))
+                                  " atomic-parsers: " x))))
    :else (throw (RalikException. (str "match: unknown form: " x)))))
 
 ;; ----------------
@@ -357,17 +368,17 @@ one of:
 ;; ((match \x) (match \y))
 ;; The calling macro should splice that into its body.
 
-(def ^{:doc "Any op that directly calls translate-form or maybe-backtrack must
+(def ^{:doc "Any op that directly calls translate-form or maybe-backtrac must
              be in this set"}
-  *opset* '#{g g* g+ g? g| g& g_ +skip -skip +case -case})
+  opset '#{g g* g+ g? g| g& g_ +skip -skip +case -case})
 
 (defn- translate-form
   "Walk form, wrapping strings, characters, and regexps in a match macro. Also
-look up keywords and symbols in *atomic-parsers*. If found, return the
+look up keywords and symbols in atomic-parsers. If found, return the
 associated code. This should only be used internally if creating new core
 parsers. form must be a list.
 
-in-parser? will be true if the first element of form is in *opset*.
+in-parser? will be true if the first element of form is in opset.
 This is how action code is mixed with parsing code without having to implement
 an explicit (now-in-action-code ...) fn or macro.
 
@@ -380,7 +391,7 @@ Return a list that the caller should splice into its body."
            (if (= (first %)
                   'match)
              %
-             (translate-form % (#{(first %)} *opset*)))
+             (translate-form % (#{(first %)} opset)))
            ;; 
            (or (char? %)
                (re-pattern? %))
@@ -393,13 +404,13 @@ Return a list that the caller should splice into its body."
            ;; 
            (and (or (keyword? %)
                     (symbol? %))
-                (% @*atomic-parsers*))
+                (% @atomic-parsers))
            (list 'match %)
            ;; 
            :else %)
          form)
     (map #(if (list? %)
-            (translate-form % (#{(first %)} *opset*))
+            (translate-form % (#{(first %)} opset))
             %)
          form)))
 
@@ -829,7 +840,7 @@ for your domain.
 
  (<kw :foo) will not match \"foobar\".
 
- (:kw-term @*atomic-parsers*) to see its current value"
+ (:kw-term @atomic-parsers) to see its current value"
   [kword]
   `(<g 0 ~(name kword) (-skip (g! :kw-term))))
 
@@ -1064,9 +1075,10 @@ offset->line-number. Output is printed to the current value of *out*"
 ;; Grammar Creation
 ;; ----------------
 
-(def *trace-depth*)
-(def *trace-indent*)
-(def ^{:doc "Rule name to total-time-in-body map. Must be bound as an atom so
+(def ^:dynamic *trace-depth*)
+(def ^:dynamic *trace-indent*)
+(def ^{:dynamic true
+       :doc "Rule name to total-time-in-body map. Must be bound as an atom so
 the macro with-profile can modify it. Initially unbound."}
   *rule-profile-map*)
 
@@ -1256,7 +1268,7 @@ checked."
                         trace? profile?))
                  (conj rules rule))
              ;; expand all atomic parser code
-             ~@(for [[_ [name code]] @*atomic-parsers*]
+             ~@(for [[_ [name code]] @atomic-parsers]
                  `(~name [] ~code))]
        (~start-rule))))
 
@@ -1293,7 +1305,7 @@ checked."
                ;; atomic parsers body will only be expanded once, in the
                ;; function body.
                ;; TODO: better way to handle :kw-term
-               ~@(for [[_ [name code]] @*atomic-parsers*]
+               ~@(for [[_ [name code]] @atomic-parsers]
                    `(~name [] ~code))]
          (if-let [result# (~start-rule)]
            (do
@@ -1418,7 +1430,7 @@ Skipping is enabled and performed with the fn wsp-skipper."
              *char=* char=]             ; use case-insensitive fn
      (letfn [(go# []
                (and ~@(translate-form forms true)))
-             ~@(for [[_ [name code]] @*atomic-parsers*]
+             ~@(for [[_ [name code]] @atomic-parsers]
                  `(~name [] ~code))]
        (if-let [result# (go#)]
          result#
@@ -1443,7 +1455,7 @@ an error message on failure."
              *char=* char=]             ; use case-insensitive fn
      (letfn [(go# []
                (and ~@(translate-form forms true)))
-             ~@(for [[_ [name code]] @*atomic-parsers*]
+             ~@(for [[_ [name code]] @atomic-parsers]
                  `(~name [] ~code))]
        (go#))))
 

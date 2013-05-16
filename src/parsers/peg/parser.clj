@@ -28,7 +28,7 @@ empty string as a match."
    :skipper nil                         ; the grammar handles the whitespace
    :profile? false
    :trace? false
-   :memoize? true
+   :memoize? false
    :print-err? true
    :ppfn identity]
   ;; Hierarchical syntax
