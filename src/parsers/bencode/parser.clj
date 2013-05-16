@@ -28,6 +28,7 @@ this.
 "
   [:start-rule Start
    :skipper nil
+   :trace? false
    :print-err? true]
   ;; 
   (Start
@@ -47,8 +48,7 @@ this.
    (>g 0 uint10 ":" #(<lex (rep % % _))))
   ;; 
   (BList
-   (>g 1 "l" (<g* 0 (BValue)) "e"
-       #(apply vector %&)))
+   (<g 1 "l" (<g* 0 (BValue)) "e"))
   ;; 
   (BDictionary
    (>g 1 "d" (<g* (BValue) (BValue)) "e"
