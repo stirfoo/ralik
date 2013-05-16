@@ -1125,38 +1125,50 @@ this accumulated info. Return the result of the rule."
       `(~rule-name ~(second rule) (with-profile ~rule-name ~@(nnext rule))))
     rule))
 
+(defn print-trace-enter
+  "with-trace helper"
+  [rule-name]
+  (let [substring (with-out-str
+                    (print (apply str (repeat *trace-depth* " ")))
+                    (print (name rule-name))
+                    (print ": ")
+                    (print (re-find #"(?m)^.*$"
+                                    (.replaceAll
+                                     (re-matcher #"\t"
+                                                 (subs *text-to-parse*
+                                                       *cur-pos*))
+                                     "        "))))
+        sslen (count substring)]
+    (println (subs substring 0 (min sslen 79)))
+    (flush)))
+
+(defn print-trace-exit
+  "with-trace helper"
+  [rule-name parse-result]
+  (let [substring (with-out-str
+                    (print (apply str (repeat *trace-depth* " ")))
+                    (print (name rule-name))
+                    (print " => ")
+                    (pr parse-result))
+        sslen (count substring)]
+    (println (subs substring 0 (min sslen 79)))
+    (flush)))
+
 (defmacro with-trace
-  "defgrammar helper"
+  "defgrammar helper to print a trace of the parse
+
+A term width of 80 columns is assumed. If *trace-depth* exceeds this, nothing
+is printed."
   [fn-name & body]
   `(do
-     ;; (when (> *trace-depth* 200)
-     ;;     (throw (Exception. "parser might stuck be in a loop")))
      (set! *trace-depth* (+ *trace-depth* *trace-indent*))
-     (printf "%s%s: %s\n"
-	     (apply str (repeat *trace-depth* " "))
-	     (name '~fn-name)
-	     (subs (.replaceAll (re-matcher #"\r|\n" *text-to-parse*) "|")
-		   *cur-pos*
-		   (min *end-pos*
-			(max *cur-pos*
-			     (+ *cur-pos*
-				(- 78 *trace-depth*
-				   1 (count (name '~fn-name))))))))
-     (flush)
-     (let [result# (do ~@body)]
-       (let [sresult# (if-not result#
-			"nil"
-			(str result#))]
-	 (println (str (apply str (repeat *trace-depth* " "))
-		       (name '~fn-name) " =>")
-		  (subs sresult# 0
-			(min (count sresult#)
-			     (max 0
-				  (- 78 *trace-depth*
-				     3 (count (name '~fn-name)))))))
-         (flush))
+     (when (< *trace-depth* 80)
+       (print-trace-enter '~fn-name))
+     (let [parse-result# (do ~@body)]
+       (when (< *trace-depth* 80)
+         (print-trace-exit '~fn-name parse-result#))
        (set! *trace-depth* (- *trace-depth* *trace-indent*))
-       result#)))
+       parse-result#)))
 
 (defn- memoize-rule
   "Wrap the body of a (quoted) rule in code that caches the rule's result.
@@ -1290,8 +1302,8 @@ checked."
                           'char-case=
                           'char=)
                *grammar-rule-cache* (atom {})
-               *trace-depth* -1
-               *trace-indent* 1
+               *trace-indent* 2
+               *trace-depth* -2
                *rule-profile-map* (atom {})]
        (letfn [~@(map #(defgrammar-helper % (and memoize?
                                                  (not= (first %)
