@@ -32,6 +32,6 @@ this.
   (Start (<g 0 (<g* 0 (BValue)) eoi))
   (BValue (<g| (BInteger) (BBytestring) (BList) (BDictionary)))
   (BInteger (<g 1 "i" (>lex #"-?\d+" Integer/parseInt) "e"))
-  (BBytestring (>g 0 uint10 ":" #(<lex (rep % % _))))
+  (BBytestring (>g 0 uint10 ":" #(<lex (rep % _))))
   (BList (<g 1 "l" (<g* 0 (BValue)) "e"))
   (BDictionary (>g 1 "d" (<g* (BValue) (BValue)) "e" #(into {} %&))))

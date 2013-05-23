@@ -45,7 +45,7 @@ empty string as a match."
                        (list* 'g| h t)))))
   (Sequence (>g* 0 (Prefix)
                  #(if (empty? %&)
-                    (list 'g "")         ; handle empty sequence
+                    (list 'g "")        ; handle empty sequence
                     (let [[p & ps] %&]
                       (if ps            ; group two or more expressions
                         (list* 'g p ps)

@@ -599,18 +599,33 @@ any order.
        (while (f#))
        true)))
 
+;; TODO: throw on m keys other than :l and :h
 (defmacro rep
-  "Match forms a least min times and at most max times. (<= 0 min max) must
-hold. If max is 0, rep will be a no-op, but still succeed."
-  [min max form & forms]
-  `(if (<= 0 ~min ~max)
-     (loop [n# 0]
-       (if (and (< n# ~max)
-                (maybe-backtrack ~(cons form forms)))
-         (recur (inc n#))
-         (or (>= n# ~min)
-             (= ~max 0))))
-     (throw (RalikException. (str "rep: (<= 0 min max) failed")))))
+  "Match forms min to max times. m must be a map: {:l m :h n} where both :l
+and :h are optional and will be replaced by 0 and Integer/MAX_VALUE
+respectively.
+
+Examples:
+  (rep 3 \\x)           ; match an \\x exactly 3 times
+  (rep 0 \\x)           ; (g? \\x)
+  (rep {:l 3} \\x)      ; match an \\x at least 3 times
+  (rep {:h 3} \\x)      ; match an \\x at most 3 times
+  (rep {:l 3 :h 9} \\x) ; match an \\x at least 3 times and at most 9 times
+  (rep {} \\x)          ; (g* \\x) with an upper limit of Integer/MAX_VALUE"
+  [m form & forms]
+  `(if (some true? ((juxt integer? map?) ~m))
+     (let [i# (integer? ~m)
+           l# (if i# ~m (get ~m :l 0))
+           h# (if i# ~m (get ~m :h Integer/MAX_VALUE))]
+       (if (<= 0 l# h#)
+         (loop [n# 0]
+           (if (and (< n# h#)
+                    (maybe-backtrack ~(cons form forms)))
+             (recur (inc n#))
+             (or (>= n# l#)
+                 (= h# 0))))
+         (throw (RalikException. (str "rep: (<= 0 min max) failed")))))
+     (throw (RalikException. "first arg to rep must be an integer or map"))))
 
 ;; -------------------------------------------------------------------------
 ;; Extractors and Collectors
@@ -809,25 +824,28 @@ followed by a successful form."
          (swap! col# into (<g* 0 (f#)))))))
 
 (defmacro <rep
-  "Same as rep but return a vector of successive matches of forms.
-If max is 0, <rep will succeed and return []."
-  [min max form & forms]
-  `(if (<= 0 ~min ~max)
-     (loop [n# 0
-            col# []
-            old-pos# *cur-pos*]
-       (if (< n# ~max)
-         (if-let [res# (<g ~form ~@forms)]
-           (recur (inc n#)
-                  (conj col# res#)
-                  *cur-pos*)
-           (do (set! *cur-pos* old-pos#) ; backtrack last failed match
-               (when (>= n# ~min)
-                 ;; minimum reached, success
-                 col#)))
-         ;; maximum reached, success
-         col#))
-     (throw (RalikException. (str "<rep: (<= 0 min max) failed")))))
+  "Same as rep but return a vector of successive matches of forms."
+  [m form & forms]
+  `(let [l# (or (and (integer? ~m) ~m)
+                (and (map? ~m) (get ~m :l 0)))
+         h# (or (and (integer? ~m) ~m)
+                (and (map? ~m) (get ~m :h Integer/MAX_VALUE)))]
+     (if (<= 0 l# h#)
+       (loop [n# 0
+              col# []
+              old-pos# *cur-pos*]
+         (if (< n# h#)
+           (if-let [res# (<g ~form ~@forms)]
+             (recur (inc n#)
+                    (conj col# res#)
+                    *cur-pos*)
+             (do (set! *cur-pos* old-pos#) ; backtrack last failed match
+                 (when (>= n# l#)
+                   ;; minimum reached, success
+                   col#)))
+           ;; maximum reached, success
+           col#))
+       (throw (RalikException. (str "<rep: (<= 0 min max) failed"))))))
 
 (defmacro <kw
   "Return the keyword matched as a string.
@@ -883,6 +901,7 @@ must be symbols."  [forms n m start end]
           (list `(reset! ~end *cur-pos*))
           (drop m forms)))
 
+;; TODO: only literal integers allowed as selector indexes
 (defmacro <lex
   "Return the string matched by forms.
 If form in an integer return the string matched by the nth form. If form is
@@ -997,8 +1016,8 @@ mth (exclusive) forms. Else, return the string matched by all forms."
   (forward-parser-helper 'when-let '<prm form forms+f))
 
 (defmacro >rep
-  [min max form & forms+f]
-  `(when-let [res# (<rep ~min ~max ~form ~@(butlast forms+f))]
+  [m form & forms+f]
+  `(when-let [res# (<rep ~m ~form ~@(butlast forms+f))]
      (if (vector? res#)
        (apply ~(last forms+f) res#)
        (~(last forms+f) res#))))
@@ -1139,8 +1158,7 @@ this accumulated info. Return the result of the rule."
                                                        *cur-pos*))
                                      "        "))))
         sslen (count substring)]
-    (println (subs substring 0 (min sslen 79)))
-    (flush)))
+    (println (subs substring 0 (min sslen 79)))))
 
 (defn print-trace-exit
   "with-trace helper"
@@ -1151,8 +1169,7 @@ this accumulated info. Return the result of the rule."
                     (print " => ")
                     (pr parse-result))
         sslen (count substring)]
-    (println (subs substring 0 (min sslen 79)))
-    (flush)))
+    (println (subs substring 0 (min sslen 79)))))
 
 (defmacro with-trace
   "defgrammar helper to print a trace of the parse
@@ -1234,18 +1251,34 @@ checked."
     ;; any left over are orphans
     (seq @name-set)))
 
+(defn- find-bad-keyarg
+  "Return the first key in m (a map) not found in valid-keys (a vector) .
+If no key found, return nil."
+  [m valid-keys]
+  (loop [ks (keys m)]
+    (if (nil? ks)
+      nil
+      (if (some #{(first ks)} valid-keys)
+        (recur (next ks))
+        (first ks)))))
+
 (defn- chk-grammar-args
   "Perform defgrammar argument checks"
   [name doc-string key-args rule rules start-rule]
-  (if-let [bad-key (loop [ks (keys key-args)]
-                     (if (nil? ks)
-                       nil
-                       (if (some #{(first ks)} [:skipper :start-rule
-                                                :match-case? :print-err?
-						:memoize? :trace? :inherit?
-						:profile? :ppfn])
-                         (recur (next ks))
-                         (first ks))))]
+  (if-let [bad-key (find-bad-keyarg key-args [:skipper :start-rule
+                                              :match-case? :print-err?
+                                              :memoize? :trace? :inherit?
+                                              :profile? :ppfn])
+           ;; (loop [ks (keys key-args)]
+           ;;           (if (nil? ks)
+           ;;             nil
+           ;;             (if (some #{(first ks)} [:skipper :start-rule
+           ;;                                      :match-case? :print-err?
+	   ;;      				:memoize? :trace? :inherit?
+	   ;;      				:profile? :ppfn])
+           ;;               (recur (next ks))
+           ;;               (first ks))))
+           ]
     (throw (RalikException.
             (str "unknown defgrammar key argument: " bad-key))))
   (when-not (symbol? name)

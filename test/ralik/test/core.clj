@@ -106,18 +106,33 @@
 
 (deftest t12
   (testing "rep parser"
-    (is (tparse2 "abcxyz" "abc" (rep 0 0 \0) "xyz" eoi))
-    (is (tparse2 "abcxyz" "abc" (rep 0 5 \0) "xyz" eoi))
-    (is (tparse2 "abc0xyz" "abc" (rep 0 5 \0) "xyz" eoi))
-    (is (tparse2 "abc00xyz" "abc" (rep 0 5 \0) "xyz" eoi))
-    (is (tparse2 "abc000xyz" "abc" (rep 0 5 \0) "xyz" eoi))
-    (is (tparse2 "abc0000xyz" "abc" (rep 0 5 \0) "xyz" eoi))
-    (is (tparse2 "abc00000xyz" "abc" (rep 0 5 \0) "xyz" eoi))
-    (is (tparse2 "01010101" (rep 0 5 \0 \1) eoi) "using & rest args")
-    (is (thrown? RalikException (tparse2 "111" (rep -1 3 \1)))
+    (is (tparse2 "abcxyz" "abc" (rep 0 \0) "xyz" eoi))
+    (is (tparse2 "abcxyz" "abc" (rep {:l 0 :h 5} \0) "xyz" eoi))
+    (is (tparse2 "abc0xyz" "abc" (rep {:l 0 :h 5} \0) "xyz" eoi))
+    (is (tparse2 "abc00xyz" "abc" (rep {:l 0 :h 5} \0) "xyz" eoi))
+    (is (tparse2 "abc000xyz" "abc" (rep {:l 0 :h 5} \0) "xyz" eoi))
+    (is (tparse2 "abc0000xyz" "abc" (rep {:l 0 :h 5} \0) "xyz" eoi))
+    (is (tparse2 "abc00000xyz" "abc" (rep {:l 0 :h 5} \0) "xyz" eoi))
+    (is (tparse2 "01010101" (rep {:l 0 :h 5} \0 \1) eoi) "using & rest args")
+    (is (tparse2 "xyxyxy@" (rep {:l 3} "x" "y") "@" eoi) ":h not given")
+    (is (tparse2 "@" (rep {:h 3} "x" "y") "@" eoi) ":l not given")
+    (is (tparse2 "xy@" (rep {:h 3} "x" "y") "@" eoi) ":l not given")
+    (is (tparse2 "xyxy@" (rep {:h 3} "x" "y") "@" eoi) ":l not given")
+    (is (tparse2 "xyxyxy@" (rep {:h 3} "x" "y") "@" eoi) ":l not given")
+    (is (thrown? RalikException (tparse2 "111" (rep {:l -1 :h 3} \1)))
         "min < 0")
-    (is (thrown? RalikException (tparse2 "111" (rep 3 1 \1)))
-        "min > max")))
+    (is (thrown? RalikException (tparse2 "111" (rep {:l 3 :h 1} \1)))
+        "min > max")
+    (is (thrown? RalikException (tparse2 "111" (rep "foo" \1)))
+        "first arg to rep must be integer or map")
+    (is (thrown? RalikException (tparse2 "111" (rep 2.3 \1)))
+        "first arg to rep must be integer or map")
+    (is (thrown? RalikException (tparse2 "111" (rep #{1 2} \1)))
+        "first arg to rep must be integer or map")
+    ;; TODO:
+    ;; (is (thrown? RalikException (tparse2 "111" (rep {:foo 3} \1)))
+    ;;     "only keys :l and :h permitted in first argument to rep")
+    ))
 
 (deftest t13
   (testing "g_ parser"
@@ -149,11 +164,7 @@
            "/* foo "))
     (is (= (tparse2
             "/* foo */" (<lex [1 3] "/*" (g+ (g- _ "*/")) "*/"))
-           " foo */"))
-    ;; XXX: will not catch this one even though RalikException is thrown
-    ;; (is (thrown? RalikException (tparse2 "xyz" (<lex -1 \x \y \z)))
-    ;;     "index < 0")
-    ))
+           " foo */"))))
 
 (deftest t16
   (testing "<g parser"
@@ -279,22 +290,22 @@
 (deftest t24
   (testing "<rep parser"
     (is (= (tparse2 "xy" (<g 0 
-                             (<rep 0 0 \x \y \z)
+                             (<rep 0 \x \y \z)
                              (g+ \x \y)
                              eoi))
            []))
     (is (= (tparse2 "xy" (<g [0 2] 
-                             (<rep 0 0 \x \y \z)
+                             (<rep 0 \x \y \z)
                              (<g+ \x \y)
                              eoi))
            [[] [[\x \y]]]))
     (is (= (tparse2 "xyzxyzxy" (<g 0 
-                                   (<rep 1 5 \x \y \z)
+                                   (<rep {:l 1 :h 5} \x \y \z)
                                    (g+ \x \y)
                                    eoi))
            [[\x \y \z] [\x \y \z]]))
     (is (= (tparse2 "xyzxyzxy" (<g [0 2] 
-                                   (<rep 1 5 \x \y \z)
+                                   (<rep {:l 1 :h 5} \x \y \z)
                                    (<g+ \x \y)
                                    eoi))
            [[[\x \y \z] [\x \y \z]] [[\x \y]]])
