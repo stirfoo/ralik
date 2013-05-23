@@ -3,14 +3,14 @@
   (:import [ralik RalikException])
   (:use [clojure.test]))
 
-(deftest t1
+(deftest match-test
   (testing "\\x, \"foo\", #\"[a-z]\", and _ matchers"
     (is (tparse2 "x" \x eoi) "literal character")
     (is (tparse2 "foo" "foo" eoi) "literal string")
     (is (tparse2 "+42" #"[+-]\d+" eoi) "literal regex pattern")
     (is (tparse2 "!@#" _ _ _ eoi) "any-character matcher")))
 
-(deftest t2
+(deftest case-+-test
   (testing "case+ and case- parsers"
     (is (tparse2 "foo" (case+ "foo") eoi) "match case")
     (is (tparse2 "Foo" (case+ "Foo") eoi) "match case")
@@ -22,7 +22,7 @@
                                       (case+ "fOO")))) eoi)
         "nested case-/+")))
 
-(deftest t3
+(deftest wsp-skipper-test
   (testing "wsp-skipper"
     (is (tparse2 "" eoi) "empty input")
     (is (tparse2 " " eoi) "single space")
@@ -33,7 +33,7 @@
     (is (tparse2 "\f \r\t\f\n\r\r\n\r\r \t\f " eoi) "all whitespace")
     (is (tparse2 "foo " "foo" eoi) "eat trailing whitespace")))
 
-(deftest t4
+(deftest skip-+-test
   (testing "skip- and skip- parsers"
     (is (tparse2 "\n" (skip- "\n") eoi) "skip- to match \\n")
     (is (tparse2 "\r" (skip- "\r") eoi) "skip- to match \\r")
@@ -50,23 +50,23 @@
                                (skip- " r"))) eoi)
         "nesed skip+/-")))
 
-(deftest t5
+(deftest g-test
   (testing "g parser"
     (is (tparse2 "" (g eoi)) "empty input")
     (is (tparse2 "xyz" (g \x \y \z) eoi) "sequence")))
 
-(deftest t6
+(deftest g+-test
   (testing "g+ parser"
     (is (tparse2 "xyxyxy" (g+ \x \y) eoi))))
 
-(deftest t7
+(deftest g*-test
   (testing "g* parser"
     (is (tparse2 "" (g* \x) (g* \y) (g* \z) eoi))
     (is (tparse2 "y" (g* \x) \y eoi))
     (is (tparse2 "xy" (g* \x) \y eoi))
     (is (tparse2 "xxxxxxxxy" (g* \x) \y eoi))))
 
-(deftest t8
+(deftest g?-test
   (testing "g? parser"
     (is (tparse2 "" (g? \x) eoi))
     (is (tparse2 "y" (g? \x) \y eoi))
@@ -75,7 +75,7 @@
     (is (tparse2 "Hello, Black" "Hello," (g? "Mr.") "Black" eoi))
     (is (tparse2 "Hello , Mr. Black" "Hello" \, (g? "Mr.") "Black" eoi))))
 
-(deftest t8
+(deftest g|-test
   (testing "g| parser"
     (is (tparse2 "blue" (g| "green" "yellow" "blue") eoi))
     (is (tparse2 "+42" (g| \+ \-) "42" eoi))
@@ -90,21 +90,21 @@
                  (g| "public" "private") (g| "interface" "class")
                  "Gahvah" \{ \} eoi))))
 
-(deftest t9
+(deftest g&-test
   (testing "g& parser"
     (is (tparse2 "xyz3_" \x \y \z (g& \3) \3 \_))))
 
-(deftest t10
+(deftest g!-test
   (testing "g! parser"
     (is (tparse2 "xyz3_" \x \y \z (g! \0) \3 \_))))
 
-(deftest t11
+(deftest prm-test
   (testing "prm parser"
     (is (tparse2 "0" (prm \0 \1) eoi))
     (is (tparse2 "1" (prm \0 \1) eoi))
     (is (tparse2 "010100001" (prm \0 \1) eoi))))
 
-(deftest t12
+(deftest rep-test
   (testing "rep parser"
     (is (tparse2 "abcxyz" "abc" (rep 0 \0) "xyz" eoi))
     (is (tparse2 "abcxyz" "abc" (rep {:l 0 :h 5} \0) "xyz" eoi))
@@ -134,17 +134,13 @@
     ;;     "only keys :l and :h permitted in first argument to rep")
     ))
 
-(deftest t13
+(deftest g_-test
   (testing "g_ parser"
     (is (tparse2 "1,1,1,1,1,1" (g_ \1 \,) eoi))
     (is (tparse2 "1,1  ,1,   1,1,1" (g_ \1 \,) eoi))
     (is (tparse2 "x.y.z" (g_ (g| \x \y \z) \.) eoi))))
 
-(deftest t14
-  (testing "g- parser"
-    (is (tparse2 "sldfkeerw" (g+ (g- _ \q)) eoi) "any character except q")))
-
-(deftest t15
+(deftest <lex-test
   (testing "Return-the-matched-text operator: <lex"
     (is (= (tparse2 "/* foo */" (<lex "/*" (g+ (g- _ "*/")) "*/"))
            "/* foo */"))
@@ -166,7 +162,7 @@
             "/* foo */" (<lex [1 3] "/*" (g+ (g- _ "*/")) "*/"))
            " foo */"))))
 
-(deftest t16
+(deftest <g-test
   (testing "<g parser"
     (is (= (tparse2 "xyz" (<g 0 \x \y \z)) \x))
     (is (= (tparse2 "xyz" (<g 0
@@ -183,7 +179,7 @@
     (is (= (tparse2 "xyz" (<g 0 (<g [1 3] \x \y \z) eoi)) [\y \z]))
     (is (= (tparse2 "xyz" (<g 0 (<g [0 3] \x \y \z) eoi)) [\x \y \z]))))
 
-(deftest t17
+(deftest <g*-test
   (testing "<g* parser"
     (is (= (tparse2 "" (<g 0 (<g* \x \y \z) eoi))
            []))
@@ -208,7 +204,7 @@
     (is (= (tparse2 "xyzxyz" (<g 0 (<g* [0 3] \x \y \z) eoi))
            [[\x \y \z] [\x \y \z]]))))
 
-(deftest t18
+(deftest <g+-test
   (testing "<g+ parser"
     (is (= (tparse2 "" (<g 0 (<g+ \x \y \z) eoi)) ; test for failed match
            nil))
@@ -233,7 +229,7 @@
     (is (= (tparse2 "xyzxyz" (<g 0 (<g+ [0 3] \x \y \z) eoi))
            [[\x \y \z] [\x \y \z]]))))
 
-(deftest t19
+(deftest <g?-test
   (testing "<g? parser"
     (is (= (tparse2 "" (<g 0 (<g? \x) eoi))
            :g?-failed))
@@ -246,19 +242,26 @@
     (is (= (tparse2 "xz" (<g 0 (<g \x (<g? \y) \z) eoi))
            [\x :g?-failed \z]))))
 
-(deftest t20
+(deftest <g|-test
   (testing "<g| parser"
     (is (= (tparse2 "x" (<g 0 (<g| \x \y \z) eoi))
            \x))))
 
-(deftest t21
+;; TODO: >g-
+(deftest g-test
+  (testing "g- parser"
+    (is (tparse2 "a" (g- #"[a-z]" \x)  eoi))
+    (is (not (tparse2 "x" (g- #"[a-z]" \x) eoi)))
+    (is (tparse2 "sldfkeerw" (g+ (g- _ \q)) eoi) "any character except q")))
+
+(deftest <g-test
   (testing "<g- parser"
     (is (= (tparse2 "x" (<g 0 (<g- _ (g| \a \b \c)) eoi))
            \x))
     (is (= (tparse2 "a" (<g 0 (<g- _ (g| \a \b \c)) eoi))
            nil))))
 
-(deftest t22
+(deftest <g_-test
   (testing "<g_ parser"
     (is (= (tparse2 "1 + 2234 - 3" (<g 0 (<g_ 0 #"\d+" #"[+-]") eoi))
            ["1" "2234" "3"]))
@@ -267,7 +270,7 @@
     (is (= (tparse2 "1 + 2234 - 3" (<g 0 (<g_ #"\d+" #"[+-]") eoi))
            ["1" ["+" "2234"] ["-" "3"]]))))
 
-(deftest t23
+(deftest <prm-test
   (testing "<prm parser"
     (is (= (tparse2 "00001111" (<g 0 (<prm \0 \1) eoi))
            [\0 \0 \0 \0 \1 \1 \1 \1]))
@@ -287,7 +290,7 @@
            [[\x [\y \z] \x [\y \z] \x] [\y \q]])
         "Check backtrack.")))
 
-(deftest t24
+(deftest <rep-test
   (testing "<rep parser"
     (is (= (tparse2 "xy" (<g 0 
                              (<rep 0 \x \y \z)
@@ -313,7 +316,7 @@
        but fail on \\z. Both \\x and \\y will advance *cur-pos*. <rep should
        reset *cur-pos* to the last \\x for subsequent matches.")))
 
-(deftest t25
+(deftest <kw-test
   (testing "<kw parser"
     (is (= (tparse2 "float"
                     (<g 0
@@ -334,12 +337,12 @@
     (is (= (tparse2 "float" (<g 0 (<kw float) eoi)) "float")
         "match with a symbol")))
 
-(deftest t26
+(deftest <kws-test
   (testing "kws parser"
     (is (= (tparse2 "float" (<g 0 (<kws int char float long) eoi))
            "float"))))
 
-(deftest t27
+(deftest >g-test
   (testing ">g parser"
     (is (= (tparse2 "0 1 2" (<g 0 (>g _ _ _ #(vec %&)) eoi))
            [\0 \1 \2]))
@@ -360,7 +363,7 @@
     (is (= (tparse2 "0 1 2" (<g 0 (>g [1 3] _ _ _ #(vec %&)) eoi))
            [\1 \2]))))
 
-(deftest t28
+(deftest >g*-test
   (testing ">g* parser"
     (is (= (tparse2 "" (<g 0 (>g* _ #(vec %&)) eoi))
            []))
@@ -382,4 +385,11 @@
            [[\0 \1]]))
     (is (= (tparse2 "0 1 2" (<g 0 (>g* [1 3] _ _ _ #(vec %&)) eoi))
            [[\1 \2]]))))
+
+;; TODO: <g|| and >g||
+(deftest g||test
+  (testing "g|| parser"
+    (is (tparse "123.456" (g|| #"\d+" (g "." #"\d+")) eoi))
+    (is (tparse "123"  (g|| #"\d+" (g "." #"\d+")) eoi))
+    (is (tparse ".456"  (g|| #"\d+" (g "." #"\d+")) eoi))))
 

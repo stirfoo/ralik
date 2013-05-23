@@ -334,6 +334,8 @@ Return the text/character matched on success else return nil or false"
 ;; Form Translation
 ;; ----------------
 
+(def backtracking-parser? '#{p* p! p& p? p|})
+
 (def ^{:doc "Any parser that DIRECTLY calls translate-form or maybe-backtrack
 must be in this set"}
   translating-parser? '#{case+ case- skip+ skip- g g+ g| g& g_ <g <g+ <g|})
@@ -379,51 +381,15 @@ must be in this set"}
            (do (set! *cur-pos* old-pos#)
                nil)))))
 
-;; -------------
-;; Basic Parsers
-;; -------------
-
-(defmacro case+
-  "Forms are parsed with case sensitivity enabled. \"FoO\" will not match
-\"foo\". Character and string matchers are affected. Regular expressions are
-not. Return the result of the last form in forms."
-  [form & forms]
-  (let [tforms (translate-form (cons form forms) true)]
-    `(binding [*char=* char-case=]
-       ~(if (> (count tforms) 1)
-          `(and ~@tforms)
-          (first tforms)))))
-
-(defmacro case-
-  "Forms are parsed with case sensitivity disabled. \"FoO\" will match \"foo\".
-Character and string matchers are affected. Regular expressions are not.
-Return the result of the last form in forms."
-  [form & forms]
-  (let [tforms (translate-form (cons form forms) true)]
-    `(binding [*char=* char=]
-       ~(if (> (count tforms) 1)
-          `(and ~@tforms)
-          (first tforms)))))
-
-(defmacro skip+
-  "Enable skipping while parsing with forms. Return the result of the last
-form in forms."
-  [form & forms]
-  (let [tforms (translate-form (cons form forms) true)]
-    `(binding [*skip?* true]
-       ~(if (> (count tforms) 1)
-          `(and ~@tforms)
-          (first tforms)))))
-
-(defmacro skip-
-  "Disable skipping while parsing with forms. Return the result of the last
-form in forms."
-  [form & forms]
-  (let [tforms (translate-form (cons form forms) true)]
-    `(binding [*skip?* false]
-       ~(if (> (count tforms) 1)
-          `(and ~@tforms)
-          (first tforms)))))
+;; -------------------------------------------------------
+;; Root parsers, everything else is derived from these.
+;; 
+;; Parser       Purpose                       Peg Syntax  
+;; -------------------------------------------------------
+;; p            sequence                      e1 e2 ... en
+;; p*           zero or more                  e*
+;; p|           ordered choice                e1 / e2
+;; -------------------------------------------------------
 
 (defmacro g
   "Return a non-nil value if forms match. This macro performs the duty of the
@@ -437,7 +403,11 @@ Example:
   (let [tforms (translate-form (cons form forms) true)]
     (if (> (count tforms) 1)
       `(and ~@tforms)
-      `(do ~(first tforms)))))
+      (first tforms))))
+
+(defn emit-p*
+  [tforms]
+  `(loop [] (if ~tforms (recur) true)))
 
 (defmacro g*
   "Match forms zero or more times. This operator always returns a non-nil
@@ -445,31 +415,14 @@ value. *cur-pos* is advanced each time forms succeeds. If any form in forms
 fails, the parser backtracks to the end position of the last successful parse
 of forms."
   [form & forms]
-  `(loop []
-     (if (maybe-backtrack ~(cons form forms))
-       (recur)
-       true)))
-
-(defmacro g+
-  "Return a non-nil value if forms matches at least once."
-  [form & forms]
-  `(letfn [(f# [] (g ~@(translate-form (cons form forms) true)))]
-     (when (f#)
-       (g* (f#)))))
-
-(defmacro g?
-  "Match forms zero or one time. This operator always succeeds but the return
-value will show if forms actually matched or not.
-  * Return the result of forms if forms succeeded.
-  * Return :g?-failed if forms did not succeed."
-  [form & forms]
-  ;; Has to backtrack because non-nil is always returned. if translate-form
-  ;; was used instead, an enclosing parser that may backtrack has no way of
-  ;; knowing if this failed. All parsers only know nil or false as failure,
-  ;; and anything else as success.
-  `(if-let [res# (maybe-backtrack ~(cons form forms))]
-     res#
-     :g?-failed))
+  (if (and (empty? forms)
+           (seq? form)
+           (backtracking-parser? (first form)))
+    (let [tforms (translate-form (cons form ()) true)]
+      (emit-p* (if (next tforms)
+                 `(and ~@tforms)
+                 (first tforms))))
+    (emit-p* `(maybe-backtrack ~(cons form forms)))))
 
 (defmacro g|
   "Return a non-nil value when the first alternate matches.
@@ -478,34 +431,66 @@ Example to match \\x, or \\y, or a digit followed by \\i:
       \\y                    ; 2nd alternate
       (g #\"\\d\" \\i))         ; 3rd alternate, grouped"
   [form & forms]
-  (let [old-pos (gensym)]
-    ;; Save the position so the parser can backtrack when/if an alternate
-    ;; fails to match. I could use maybe-backtrack here but it would expand to
-    ;; much more superfluous code than this. Each alternate would get its own
-    ;; old-pos. Bleah!
+  (let [old-pos (gensym "old-pos-")]
     `(binding [*cut* false]
        (let [~old-pos *cur-pos*]
          (try
            (or ~@(map (fn [cur-form]
-                        `(or
-                          ~@(translate-form (list cur-form) true)
-                          (if *cut*
-                            (throw (CutException.))
-                            (do (set! *cur-pos* ~old-pos)
-                                nil))))
+                        (if (and (seq? cur-form)
+                                 (backtracking-parser? (first cur-form)))
+                          `(or (g ~cur-form)
+                               (when *cut* (throw (CutException.))))
+                          `(or (g ~cur-form)
+                               (if *cut*
+                                 (throw (CutException.))
+                                 (do (set! *cur-pos* ~old-pos)
+                                     nil)))))
                       (cons form forms)))
-           (catch CutException e#
-             nil))))))
+           ;; if a cut `!' was encountered don't reset *cur-pos* and don't try
+           ;; any more alternates
+           (catch CutException e# nil))))))
+
+;; --------------------------------------------------------
+;; Derived parsers
+;;
+;; Parser       Purpose                          Peg Syntax
+;; --------------------------------------------------------
+;; p?           optional                         e / ""
+;; p&           positive look ahead              &e
+;; p!           negative look ahead              !&e
+;; p+           one or more                      e e*
+;; ch           match any single character       .
+;; p_           interspersed list of items       e1 (e2 e1)*
+;; p-           match all but...                 !e1 e2
+;; p||          a or b, or a followed by b       (e1 e2?) / e2
+;; rep          like regexp x{M,N}               N/A
+;; prm          permutation                      (e1 / e2)+
+;; skip-        disable skipping                 N/A
+;; skip+        enable  skipping                 N/A
+;; case-        case insensitive                 N/A
+;; case+        case sensitive                   N/A
+;; --------------------------------------------------------
+
+(defmacro g+
+  "Return a non-nil value if forms matches at least once."
+  [form & forms]
+  `(letfn [(f# [] (g ~form ~@forms))]
+     (g (f#) (g* (f#)))))
+
+(defmacro g?
+  "Match forms zero or one time. This operator always succeeds but the return
+value will show if forms actually matched or not.
+  * Return the result of forms if forms succeeded.
+  * Return :g?-failed if forms did not succeed."
+  [form & forms]
+  `(g| (g ~form ~@forms) :g?-failed))
 
 (defmacro g&
   "Return a non-nil value if forms match. This parser peeks ahead, matching
 forms, but does not advance *cur-pos*."
   [form & forms]
-  (let [tforms (translate-form (cons form forms) true)]
-    `(binding [*cur-pos* *cur-pos*]
-       ~(if (> (count tforms) 1)
-          `(and ~@tforms)
-          `(do ~(first tforms))))))
+  `(binding [*cur-pos* *cur-pos*]
+     (g ~form ~@forms)))
 
 (defmacro g!
   "Return a non-nil value if forms do not match. This parser peeks ahead,
@@ -518,8 +503,7 @@ forms, but does not advance *cur-pos*."
 Example:
  (parse \"aboerivneiscde\" (g+ (g- _ \\q))) ; match any character except a q"
   [true-form false-form]
-  `(when (g! ~false-form)
-     (g ~true-form)))
+  `(g (g! ~false-form) ~true-form))
 
 (defmacro g_
   "Match form. The result of this match will be the result of this
@@ -532,10 +516,8 @@ Examples:
  (g_ #\"\\d\" \\,) is just a bit shorter form of:
  (g #\"\\d\" (g* \\, #\"\\d\"))"
   [form separator]
-  `(letfn [(f# []
-             ~@(translate-form (list form) true))]
-     (when (g (f#))
-       (g* ~separator (f#)))))
+  `(letfn [(f# [] (g ~form))]
+     (g (f#) (g* ~separator (f#)))))
 
 (defmacro prm
   "Return a non-nil value if one or more of the parsers in forms matches, in
@@ -543,11 +525,7 @@ any order.
   Example:
   (parse \"010100001\" (lex (prm \\0 \\1))) => \"010100001\""
   [form & forms]
-  ;; this letfn prevents forms from being expanded twice
-  `(letfn [(f# [] (g| ~form ~@forms))]
-     (when (f#)
-       (while (f#))
-       true)))
+  `(g+ (g| ~form ~@forms)))
 
 ;; TODO: throw on m keys other than :l and :h
 (defmacro rep
@@ -576,6 +554,49 @@ Examples:
                  (= h# 0))))
          (throw (RalikException. (str "rep: (<= 0 min max) failed")))))
      (throw (RalikException. "first arg to rep must be an integer or map"))))
+
+(defmacro g||
+  "Match form1 or form2, or form1 followed by form2
+
+Examples from the boost Spirit documentation. All will match the entire text.
+ (tparse \"123.456\" (p|| #\"\\d+\" (p \".\" #\"\\d+\")) (p! (ch)))
+ (tparse \"123\" (p|| #\"\\d+\" (p \".\" #\"\\d+\")) (p! (ch)))
+ (tparse \".456\" (p|| #\"\\d+\" (p \".\" #\"\\d+\")) (p! (ch)))"
+  [form1 form2]
+  `(letfn [(f# [] (g ~form2))]
+     (g| (g ~form1 (g? (f#)))
+         (f#))))
+
+(defn case-skip-emitter
+  [sym value form & forms]
+  `(binding [~sym ~value]
+     (g ~form ~@forms)))
+
+(defmacro case+
+  "Forms are parsed with case sensitivity enabled. \"FoO\" will not match
+\"foo\". Character and string matchers are affected. Regular expressions are
+not. Return the result of the last form in forms."
+  [form & forms]
+  (apply case-skip-emitter '*char=* 'char-case= form forms))
+
+(defmacro case-
+  "Forms are parsed with case sensitivity disabled. \"FoO\" will match \"foo\".
+Character and string matchers are affected. Regular expressions are not.
+Return the result of the last form in forms."
+  [form & forms]
+  (apply case-skip-emitter '*char=* 'char= form forms))
+
+(defmacro skip+
+  "Enable skipping while parsing with forms. Return the result of the last
+form in forms."
+  [form & forms]
+  (apply case-skip-emitter '*skip?* true form forms))
+
+(defmacro skip-
+  "Disable skipping while parsing with forms. Return the result of the last
+form in forms."
+  [form & forms]
+  (apply case-skip-emitter '*skip?* false form forms))
 
 ;; -------------------------------------------------------------------------
 ;; Extractors and Collectors
