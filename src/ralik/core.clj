@@ -289,8 +289,8 @@ no prefix. Return an integer."}
 
 (def ^{:doc "Function to compare two characters for equality, ignoring case."}
   char= (fn [^Character c1 ^Character c2]
-          (= (.toLowerCase (str c1))
-             (.toLowerCase (str c2)))))
+          (= (Character/toLowerCase c1)
+             (Character/toLowerCase c2))))
 
 (def ^{:doc "Function to compare two characters for equality, using case."}
   char-case= =)
@@ -340,10 +340,10 @@ Return the text/character matched on success else return nil or false"
   (skip)
   (if (<= *cur-pos* *end-pos*)
     (let [m (re-matcher pat (subs *text-to-parse* *cur-pos*))]
-      (or (when (.lookingAt m)
-            (do (set! *cur-pos* (+ *cur-pos* (.end m)))
-                (.group m)))
-          (advance-*err-pos* (str "expected regepx match `" pat "'"))))))
+      (if (.lookingAt m)
+        (do (set! *cur-pos* (+ *cur-pos* (.end m)))
+            (.group m))
+        (advance-*err-pos* (str "expected regepx match `" pat "'"))))))
 
 ;; ----------------
 ;; Form Translation
