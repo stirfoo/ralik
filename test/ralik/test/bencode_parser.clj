@@ -1,4 +1,4 @@
-(ns ralik.test.bencode
+(ns ralik.test.bencode-parser
   (:use [parsers.bencode.parser])
   (:use [clojure.test]))
 

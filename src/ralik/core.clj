@@ -151,6 +151,8 @@ the form containing the !. Initially unbound."}
 (def ^{:doc "Symbol -> [fn-name parser-code] map
 See: defatomic"}
   atomic-parsers (atom {}))
+(defn atomic-parser? [x] (@atomic-parsers x))
+
 
 ;; -----------
 ;; odds & ends
@@ -293,126 +295,116 @@ no prefix. Return an integer."}
 (def ^{:doc "Function to compare two characters for equality, using case."}
   char-case= =)
 
-(defn match-char
-  "Return the char matched by x.
-A pre-skip is performed."
-  [x]
+(defmulti match
+  "Match x against *text-to-parse* at *cur-pos*.
+Return the text/character matched on success else return nil or false"
+  (fn [x] [(type x)]))
+
+(defmethod match [java.lang.Character] [c]
   (skip)
-  (or (and (< *cur-pos* *end-pos*)
-           (*char=* (.charAt *text-to-parse* *cur-pos*) x)
+  (when (< *cur-pos* *end-pos*)
+    (let [result (.charAt *text-to-parse* *cur-pos*)]
+      (and (*char=* result c)
            (set! *cur-pos* (inc *cur-pos*))
-           ;; return the character matched
-           (.charAt *text-to-parse* (dec *cur-pos*)))
-      (adv-err-pos (str "expected character " x))))
+           result))))
 
-(defn match-string
-  "Return the string matched by x.
-A pre-skip is performed."
-  [x]
-  (skip)  
-  (let [pos *cur-pos*]
-    (or (loop [s (seq x)]
-          (if s
-            (and (< *cur-pos* *end-pos*)
-                 (*char=* (.charAt *text-to-parse* *cur-pos*)
-                          (first s))
-                 (set! *cur-pos* (inc *cur-pos*))
-                 (recur (next s)))
-            ;; return the string matched
-            (subs *text-to-parse* pos *cur-pos*)))
-        (do (set! *cur-pos* pos)
-            (adv-err-pos (str "expected string " x))))))
-
-(defn match-regexp
-  "Return the string matched by x.
-A pre-skip is performed. +case and -case have no affect on this matcher. Use
-the appropriate match flag(s) instead."
-  [x]
+(defmethod match [java.lang.String] [s]
   (skip)
-  ;; using <= so (parse "" (g| (g? \x) #"x?") eoi) will correctly succeed
-  (if (<= *cur-pos* *end-pos*)
-    (let [m (re-matcher x (subs *text-to-parse* *cur-pos*))]
-      (if (.lookingAt m)
-        (do (set! *cur-pos* (+ *cur-pos* (.end m)))
-            ;; return the matched text
-            (.group m))
-        (adv-err-pos (str "expected re match " (.toString x)))))))
+  (loop [sseq (seq s)
+         ttpseq (seq (subs *text-to-parse* *cur-pos*))
+         pos *cur-pos*
+         result ""]
+    (if sseq
+      (when ttpseq
+        (let [c (first ttpseq)]
+          (when (*char=* (first sseq) c)
+            (recur (next sseq) (next ttpseq) (inc pos) (str result c)))))
+      (do (set! *cur-pos* pos)
+          result))))
 
-(defmacro match
-  "Perform character level matching. Return non-nil on a match. X should be
-one of:
-  * literal character
-  * literal string
-  * java.util.regex.Pattern instance
-  * a symbol or keyword found in atomic-parsers"
-  [x]
-  (cond
-   (char? x) `(match-char ~x)
-   (string? x) `(match-string ~x)
-   (re-pattern? x) `(match-regexp ~x)
-   ;; if x is found in atomic-parsers, insert a call to its gensym'd name
-   ;; that was created in defatomic, in its place.
-   (or (symbol? x) (keyword? x))
-   (if-let [[name _] (x @atomic-parsers)]
-     `(~name)
-     (throw (RalikException. (str "match: symbol not found in"
-                                  " atomic-parsers: " x))))
-   :else (throw (RalikException. (str "match: unknown form: " x)))))
+(defmethod match [java.util.regex.Pattern] [pat]
+  (skip)
+  (if (<= *cur-pos* *end-pos*)
+    (let [m (re-matcher pat (subs *text-to-parse* *cur-pos*))]
+      (when (.lookingAt m)
+        (do (set! *cur-pos* (+ *cur-pos* (.end m)))
+            (.group m))))))
 
 ;; ----------------
 ;; Form Translation
 ;; ----------------
 
+(def ^{:doc "Any parser that DIRECTLY calls translate-form or maybe-backtrack
+must be in this set"}
+  translating-parser? '#{+case -case +skip -skip g g+ g| g& g_ <g <g+ <g|})
+
 ;; '(\x \y)
 ;; Given that example, translate-form will return:
 ;; ((match \x) (match \y))
 ;; The calling macro should splice that into its body.
-
-(def ^{:doc "Any op that directly calls translate-form or maybe-backtrac must
-             be in this set"}
-  opset '#{g g* g+ g? g| g& g_ +skip -skip +case -case})
-
-(defn- translate-form
-  "Walk form, wrapping strings, characters, and regexps in a match macro. Also
-look up keywords and symbols in atomic-parsers. If found, return the
-associated code. This should only be used internally if creating new core
-parsers. form must be a list.
-
-in-parser? will be true if the first element of form is in opset.
-This is how action code is mixed with parsing code without having to implement
-an explicit (now-in-action-code ...) fn or macro.
-
-Return a list that the caller should splice into its body."
+(defn translate-form
   [form in-parser?]
   (if in-parser?
     (map #(cond
-           ;; 
-           (list? %)
-           (if (= (first %)
-                  'match)
-             %
-             (translate-form % (#{(first %)} opset)))
-           ;; 
-           (or (char? %)
-               (re-pattern? %))
-           (list 'match %)
-           ;;
-           (string? %)
-           (if (= (count %) 1)
-             (list 'match (first %))    ; (match \x), not (match "x")
-             (list 'match %))
-           ;; 
-           (and (or (keyword? %)
-                    (symbol? %))
-                (% @atomic-parsers))
-           (list 'match %)
-           ;; 
+           (list? %) (if (= (first %) 'match)
+                       %
+                       (translate-form % (translating-parser? (first %))))
+           (string? %) (cond (= % "") (list 'match "")
+                             (> (count %) 1) (list 'match %)
+                             :else (list 'match (first %)))
+           (or (char? %) (re-pattern? %)) (list 'match %)
+           (or (keyword? %) (symbol? %)) (if-let [[name _]
+                                                  (@atomic-parsers %)]
+                                           (list name)
+                                           %)
            :else %)
          form)
     (map #(if (list? %)
-            (translate-form % (#{(first %)} opset))
+            (translate-form % (translating-parser? (first %)))
             %)
          form)))
+
+;; (defn- translate-form
+;;   "Walk form, wrapping strings, characters, and regexps in a match macro. Also
+;; look up keywords and symbols in atomic-parsers. If found, return the
+;; associated code. This should only be used internally if creating new core
+;; parsers. form must be a list.
+
+;; in-parser? will be true if the first element of form is in opset.
+;; This is how action code is mixed with parsing code without having to implement
+;; an explicit (now-in-action-code ...) fn or macro.
+
+;; Return a list that the caller should splice into its body."
+;;   [form in-parser?]
+;;   (if in-parser?
+;;     (map #(cond
+;;            ;; 
+;;            (list? %)
+;;            (if (= (first %)
+;;                   'match)
+;;              %
+;;              (translate-form % (#{(first %)} opset)))
+;;            ;; 
+;;            (or (char? %)
+;;                (re-pattern? %))
+;;            (list 'match %)
+;;            ;;
+;;            (string? %)
+;;            (if (= (count %) 1)
+;;              (list 'match (first %))    ; (match \x), not (match "x")
+;;              (list 'match %))
+;;            ;; 
+;;            (and (or (keyword? %)
+;;                     (symbol? %))
+;;                 (% @atomic-parsers))
+;;            (list 'match %)
+;;            ;; 
+;;            :else %)
+;;          form)
+;;     (map #(if (list? %)
+;;             (translate-form % (#{(first %)} opset))
+;;             %)
+;;          form)))
 
 ;; ------------
 ;; Backtracking

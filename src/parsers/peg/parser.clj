@@ -128,30 +128,36 @@ empty string as a match."
 (defn peg->ralik
   "Read and parse in-file, a PEG, then write a ralik grammar to out-file.
 
-out-file WILL BE OVERWRITTEN WITHOUT NOTICE. If the PEG is correct, and fully
-defined, the ralik parser should be able to syntax check any input against
-it. grammar-name and start-rule can be a string, keyword or, quoted symbol.
-Rule names are not munged to keep them from colliding with clojure names.
+out-file WILL BE OVERWRITTEN WITHOUT NOTICE (of course if out-file is *out* it
+will pretty print at the repl) . If the PEG is correct, and fully defined, the
+ralik parser should be able to syntax check any input against it. grammar-name
+and start-rule can be a string, keyword or, quoted symbol.  Rule names are not
+munged to keep them from colliding with clojure names.
+
+A ns form will be written to out-file with grammar-name as the namespace.
 
 Return nil."
   [in-file out-file grammar-name start-rule]
   (when-let [rules (peg (slurp in-file))]
-    (spit out-file
-          (with-out-str
-            (pprint '(ns "NAMESPACE"
-                       (:use ralik.core)
-                       (:import [ralik RalikException])))
-            (println)
-            (pprint (list* 'defgrammar
-                           (symbol (name grammar-name))
-                           ;; TODO: full path to infile
-                           (str "Auto-generated grammar from " in-file)
-                           [:start-rule (symbol (name start-rule))
-                            :skipper nil
-                            :match-case? true
-                            :print-err? true
-                            :trace? false
-                            :profile? false
-                            :memoize? false
-                            :ppfn 'identity]
-                           rules))))))
+    (let [named-sym (symbol (name grammar-name))]
+      (spit out-file
+            (with-out-str
+              (pprint `(~(symbol "ns") ~named-sym
+                        (:use ralik.core)
+                        (:import [~(symbol "ralik")
+                                  ~(symbol "RalikException")])))
+              (println)
+              (pprint (list* 'defgrammar
+                             named-sym
+                             ;; TODO: full path to infile
+                             (str "Auto-generated grammar/parser from "
+                                  in-file)
+                             [:start-rule (symbol (name start-rule))
+                              :skipper nil
+                              :match-case? true
+                              :print-err? true
+                              :trace? false
+                              :profile? false
+                              :memoize? false
+                              :ppfn 'identity]
+                             rules)))))))
