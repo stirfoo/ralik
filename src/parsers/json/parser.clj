@@ -142,7 +142,7 @@ NOTE: If you want to read JSON about a zillion times faster, use
        ;; match the leading quote
        "\""
        ;; disable skipping while parsing between " and "
-       (-skip
+       (skip-
         ;; Match all of the forms zero or more times and pass the result of
         ;; all the successful matches of the 2nd form (the <g| form) to the fn
         ;; in the tail of the form. g*, <g*, and >g* always returns a possibly
@@ -207,7 +207,7 @@ NOTE: If you want to read JSON about a zillion times faster, use
                         "r" \return "t" \tab})
         (g "u" (HexChar))))
   (Jstring
-   (<g 1 "\"" (-skip (>g* 1 (g! "\"")
+   (<g 1 "\"" (skip- (>g* 1 (g! "\"")
                           (<g| (<g 2 "\\" ! (EscChar))
                                _)
                           #(apply str %&)))

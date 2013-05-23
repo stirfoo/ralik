@@ -39,10 +39,10 @@ Extensions of the Base Parsers
   rep    repeat, like regexp {M,}, {,N}, {M,N}
   prm    permutation, match one or more in any order
   g-     match one but not the other
-  -skip  skipping disable
-  +skip  skipping enabled
-  -case  ignore case when matching with a string or character
-  +case  don't ignore case
+  skip-  skipping disable
+  skip+  skipping enabled
+  case-  ignore case when matching with a string or character
+  case+  don't ignore case
 
 Collector and Extractor Parsers
   These parsers collect or extract parse results and return them. See their
@@ -336,7 +336,7 @@ Return the text/character matched on success else return nil or false"
 
 (def ^{:doc "Any parser that DIRECTLY calls translate-form or maybe-backtrack
 must be in this set"}
-  translating-parser? '#{+case -case +skip -skip g g+ g| g& g_ <g <g+ <g|})
+  translating-parser? '#{case+ case- skip+ skip- g g+ g| g& g_ <g <g+ <g|})
 
 ;; '(\x \y)
 ;; Given that example, translate-form will return:
@@ -383,7 +383,7 @@ must be in this set"}
 ;; Basic Parsers
 ;; -------------
 
-(defmacro +case
+(defmacro case+
   "Forms are parsed with case sensitivity enabled. \"FoO\" will not match
 \"foo\". Character and string matchers are affected. Regular expressions are
 not. Return the result of the last form in forms."
@@ -394,7 +394,7 @@ not. Return the result of the last form in forms."
           `(and ~@tforms)
           (first tforms)))))
 
-(defmacro -case
+(defmacro case-
   "Forms are parsed with case sensitivity disabled. \"FoO\" will match \"foo\".
 Character and string matchers are affected. Regular expressions are not.
 Return the result of the last form in forms."
@@ -405,7 +405,7 @@ Return the result of the last form in forms."
           `(and ~@tforms)
           (first tforms)))))
 
-(defmacro +skip
+(defmacro skip+
   "Enable skipping while parsing with forms. Return the result of the last
 form in forms."
   [form & forms]
@@ -415,7 +415,7 @@ form in forms."
           `(and ~@tforms)
           (first tforms)))))
 
-(defmacro -skip
+(defmacro skip-
   "Disable skipping while parsing with forms. Return the result of the last
 form in forms."
   [form & forms]
@@ -810,15 +810,15 @@ for your domain.
 
  (:kw-term @atomic-parsers) to see its current value"
   [kword]
-  `(<g 0 ~(name kword) (-skip (g! :kw-term))))
+  `(<g 0 ~(name kword) (skip- (g! :kw-term))))
 
 (defmacro <kws
   "Return the first keyword that matches as a string or nil if no match.
 This behaves as <kw except no optional return values can be supplied."
   [kword & kwords]
-  `(<g| (<g 0 ~(name kword) (-skip (g! :kw-term)))
+  `(<g| (<g 0 ~(name kword) (skip- (g! :kw-term)))
         ~@(map (fn [x]
-                 `(<g 0 ~(name x) (-skip (g! :kw-term))))
+                 `(<g 0 ~(name x) (skip- (g! :kw-term))))
                kwords)))
 
 (defn- lex-nth-form

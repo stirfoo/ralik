@@ -11,16 +11,16 @@
     (is (tparse2 "!@#" _ _ _ eoi) "any-character matcher")))
 
 (deftest t2
-  (testing "+case and -case parsers"
-    (is (tparse2 "foo" (+case "foo") eoi) "match case")
-    (is (tparse2 "Foo" (+case "Foo") eoi) "match case")
-    (is (tparse2 "FoO" (-case "foo") eoi) "ignore case")
+  (testing "case+ and case- parsers"
+    (is (tparse2 "foo" (case+ "foo") eoi) "match case")
+    (is (tparse2 "Foo" (case+ "Foo") eoi) "match case")
+    (is (tparse2 "FoO" (case- "foo") eoi) "ignore case")
     (is (tparse2 "foo FOO FoO fOO"
-                 (-case "FOO"
-                        (+case "FOO"
-                               (-case "foo"
-                                      (+case "fOO")))) eoi)
-        "nested +/-case")))
+                 (case- "FOO"
+                        (case+ "FOO"
+                               (case- "foo"
+                                      (case+ "fOO")))) eoi)
+        "nested case-/+")))
 
 (deftest t3
   (testing "wsp-skipper"
@@ -34,21 +34,21 @@
     (is (tparse2 "foo " "foo" eoi) "eat trailing whitespace")))
 
 (deftest t4
-  (testing "+skip and -skip parsers"
-    (is (tparse2 "\n" (-skip "\n") eoi) "-skip to match \\n")
-    (is (tparse2 "\r" (-skip "\r") eoi) "-skip to match \\r")
-    (is (tparse2 "\n\f" (-skip "\n\f") eoi) "-skip to match \\n\\f")
+  (testing "skip- and skip- parsers"
+    (is (tparse2 "\n" (skip- "\n") eoi) "skip- to match \\n")
+    (is (tparse2 "\r" (skip- "\r") eoi) "skip- to match \\r")
+    (is (tparse2 "\n\f" (skip- "\n\f") eoi) "skip- to match \\n\\f")
     (is (tparse2 "
-" (-skip "
-") eoi) "-skip to match a \\n")
+" (skip- "
+") eoi) "skip- to match a \\n")
     (is (tparse2 " foo ba r"
                  ;; skip off to match the leading space
-                 (-skip " foo"
+                 (skip- " foo"
                         ;; skip back on to eat the leading space
-                        (+skip "ba"
+                        (skip+ "ba"
                                ;; skip back off to match the leading space
-                               (-skip " r"))) eoi)
-        "nesed +/-skip")))
+                               (skip- " r"))) eoi)
+        "nesed skip+/-")))
 
 (deftest t5
   (testing "g parser"
@@ -323,7 +323,7 @@
         "match float return \"float\"")
     (is (= (tparse2 "FLOAT"
                     (<g 0
-                        (-case (<kw :float))
+                        (case- (<kw :float))
                         eoi))
            "FLOAT")
         "match float return the actual string matched \"FLOAT\"")
