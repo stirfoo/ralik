@@ -364,48 +364,6 @@ must be in this set"}
             %)
          form)))
 
-;; (defn- translate-form
-;;   "Walk form, wrapping strings, characters, and regexps in a match macro. Also
-;; look up keywords and symbols in atomic-parsers. If found, return the
-;; associated code. This should only be used internally if creating new core
-;; parsers. form must be a list.
-
-;; in-parser? will be true if the first element of form is in opset.
-;; This is how action code is mixed with parsing code without having to implement
-;; an explicit (now-in-action-code ...) fn or macro.
-
-;; Return a list that the caller should splice into its body."
-;;   [form in-parser?]
-;;   (if in-parser?
-;;     (map #(cond
-;;            ;; 
-;;            (list? %)
-;;            (if (= (first %)
-;;                   'match)
-;;              %
-;;              (translate-form % (#{(first %)} opset)))
-;;            ;; 
-;;            (or (char? %)
-;;                (re-pattern? %))
-;;            (list 'match %)
-;;            ;;
-;;            (string? %)
-;;            (if (= (count %) 1)
-;;              (list 'match (first %))    ; (match \x), not (match "x")
-;;              (list 'match %))
-;;            ;; 
-;;            (and (or (keyword? %)
-;;                     (symbol? %))
-;;                 (% @atomic-parsers))
-;;            (list 'match %)
-;;            ;; 
-;;            :else %)
-;;          form)
-;;     (map #(if (list? %)
-;;             (translate-form % (#{(first %)} opset))
-;;             %)
-;;          form)))
-
 ;; ------------
 ;; Backtracking
 ;; ------------
