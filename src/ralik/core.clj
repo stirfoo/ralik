@@ -153,7 +153,6 @@ See: defatomic"}
   atomic-parsers (atom {}))
 (defn atomic-parser? [x] (@atomic-parsers x))
 
-
 ;; -----------
 ;; odds & ends
 ;; -----------
@@ -799,6 +798,38 @@ followed by a successful form."
        (throw (RalikException. (str "<g_ expected the integer 0 or 1 as its"
                                     " first argument, got: " i))))))
 
+(defmacro g||
+  "Match form1 or form2, or form1 followed by form2
+
+Examples from the boost Spirit documentation. All will match the entire text.
+ (tparse \"123.456\" (p|| #\"\\d+\" (p \".\" #\"\\d+\")) (p! (ch)))
+ (tparse \"123\" (p|| #\"\\d+\" (p \".\" #\"\\d+\")) (p! (ch)))
+ (tparse \".456\" (p|| #\"\\d+\" (p \".\" #\"\\d+\")) (p! (ch)))"
+  [form1 form2]
+  `(letfn [(f# [] (g ~form2))]
+     (g| (g ~form1 (g? (f#)))
+         (f#))))
+
+(defmacro <g||
+  "Same as g|| except:
+If i is not supplied, on success return:
+ [form1 form2], [:g?-failed form2], or [form1 :g?-failed]
+If i is 0, on success return: form1 or :g?-failed
+if i is 1, on success return: form2 or :g?-failed
+NOTE: i must be a literal integer"
+  ([form1 form2]
+     `(letfn [(f# [] (<g 0 ~form2))]
+        (<g| (<g ~form1 (<g? 0 (f#)))
+             (>g 0 (f#) #(vector :g?-failed %)))))
+  ([i form1 form2]
+     (when-not (#{0, 1} i)
+       (throw (RalikException. (str "<g|| expected the literal integer 0 or 1"
+                                    " as its first argument, got: " i))))
+     `(letfn [(f# [] (<g 0 ~form2))]
+        (when-let [res# (<g| (<g ~form1 (<g? 0 (f#)))
+                             (>g 0 (f#) #(vector :g?-failed %)))]
+          (res# ~i)))))
+
 (defmacro <prm
   "Same as prm but return a vector of each successive match of form."
   [form & forms]
@@ -1013,6 +1044,19 @@ mth (exclusive) forms. Else, return the string matched by all forms."
           (~f res#))))
   ([i form separator f]
      `(when-let [res# (<g_ ~i ~form ~separator)]
+        (if (vector? res#)
+          (apply ~f res#)
+          (~f res#)))))
+
+(defmacro >g||
+  "Same as <g|| except call f with the successful result"
+  ([form1 form2 f]
+     `(when-let [res# (<g|| ~form1 ~form2)]
+        (if (vector? res#)
+          (apply ~f res#)
+          (~f res#))))
+  ([i form1 form2 f]
+     `(when-let [res# (<g|| ~i ~form1 ~form2)]
         (if (vector? res#)
           (apply ~f res#)
           (~f res#)))))
