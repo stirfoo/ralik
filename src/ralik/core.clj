@@ -295,6 +295,13 @@ no prefix. Return an integer."}
 (def ^{:doc "Function to compare two characters for equality, using case."}
   char-case= =)
 
+(defn advance-*err-pos*
+  ([msg] (advance-*err-pos* msg *cur-pos*))
+  ([msg pos]
+     (set! *err-pos* (max *err-pos* pos))
+     (set! *err-msg* msg)
+     nil))
+
 (defmulti match
   "Match x against *text-to-parse* at *cur-pos*.
 Return the text/character matched on success else return nil or false"
@@ -304,9 +311,10 @@ Return the text/character matched on success else return nil or false"
   (skip)
   (when (< *cur-pos* *end-pos*)
     (let [result (.charAt *text-to-parse* *cur-pos*)]
-      (and (*char=* result c)
-           (set! *cur-pos* (inc *cur-pos*))
-           result))))
+      (or (and (*char=* result c)
+               (set! *cur-pos* (inc *cur-pos*))
+               result)
+          (advance-*err-pos* (str "expected character `" c "'"))))))
 
 (defmethod match [java.lang.String] [s]
   (skip)
@@ -315,10 +323,16 @@ Return the text/character matched on success else return nil or false"
          pos *cur-pos*
          result ""]
     (if sseq
-      (when ttpseq
+      (if ttpseq
         (let [c (first ttpseq)]
-          (when (*char=* (first sseq) c)
-            (recur (next sseq) (next ttpseq) (inc pos) (str result c)))))
+          (if (*char=* (first sseq) c)
+            (recur (next sseq) (next ttpseq) (inc pos) (str result c))
+            (advance-*err-pos* (str "expected character `" (first sseq) "'")
+                               pos)))
+        
+        (advance-*err-pos* (str "expected character `" (first sseq)
+                                "' at end of input")
+                           pos))
       (do (set! *cur-pos* pos)
           result))))
 
@@ -326,9 +340,10 @@ Return the text/character matched on success else return nil or false"
   (skip)
   (if (<= *cur-pos* *end-pos*)
     (let [m (re-matcher pat (subs *text-to-parse* *cur-pos*))]
-      (when (.lookingAt m)
-        (do (set! *cur-pos* (+ *cur-pos* (.end m)))
-            (.group m))))))
+      (or (when (.lookingAt m)
+            (do (set! *cur-pos* (+ *cur-pos* (.end m)))
+                (.group m)))
+          (advance-*err-pos* (str "expected regepx match `" pat "'"))))))
 
 ;; ----------------
 ;; Form Translation
@@ -457,7 +472,7 @@ Example to match \\x, or \\y, or a digit followed by \\i:
 ;; --------------------------------------------------------
 ;; p?           optional                         e / ""
 ;; p&           positive look ahead              &e
-;; p!           negative look ahead              !&e
+;; p!           negative look ahead              !e
 ;; p+           one or more                      e e*
 ;; ch           match any single character       .
 ;; p_           interspersed list of items       e1 (e2 e1)*
@@ -926,6 +941,26 @@ mth (exclusive) forms. Else, return the string matched by all forms."
           (when res#
             (subs *text-to-parse* start# *cur-pos*)))))))
 
+(defmacro <skip-
+  [form & forms]
+  `(binding [*skip?* false]
+     (<g ~form ~@forms)))
+
+(defmacro <skip+
+  [form & forms]
+  `(binding [*skip?* true]
+     (<g ~form ~@forms)))
+
+(defmacro <case-
+  [form & forms]
+  `(binding [*char=* char=]
+     (<g ~form ~@forms)))
+
+(defmacro <case+
+  [form & forms]
+  `(binding [*char=* char-case=]
+     (<g ~form ~@forms)))
+
 ;; ---------------------------------------------------------------------------
 ;; Forward Parsers (glorified anaphorics)
 ;;
@@ -1008,6 +1043,26 @@ mth (exclusive) forms. Else, return the string matched by all forms."
   `(when-let [res# (<lex ~form ~@(butlast forms+f))]
      (~(last forms+f) res#)))
 
+(defmacro >skip-
+  [form & forms+f]
+  `(binding [*skip?* false]
+     (>g ~form ~@forms+f)))
+
+(defmacro >skip+
+  [form & forms+f]
+  `(binding [*skip?* true]
+     (>g ~form ~@forms+f)))
+
+(defmacro >case-
+  [form & forms+f]
+  `(binding [*char=* char=]
+     (>g ~form ~@forms+f)))
+
+(defmacro >case+
+  [form & forms+f]
+  `(binding [*char=* char-case=]
+     (>g ~form ~@forms+f)))
+
 ;; -------
 ;; Utility
 ;; -------
@@ -1057,9 +1112,8 @@ offset->line-number. Output is printed to the current value of *out*"
   [m]
   (let [spacing (apply str (repeat (:column m) " "))]
     ;; the hint is crap
-    ;; (println "\nParse Error Hint: line" (:line m) (or (:hint m) ""))
-    (println "\nParse Error line" (:line m))
-    (printf "%s\n%s^\n\n" (:text m) spacing)))
+    (println "Parse Error line" (:line m) (or (:hint m) ""))
+    (printf "%s\n%s^\n" (:text m) spacing)))
 
 ;; ----------------
 ;; Grammar Creation
@@ -1445,7 +1499,9 @@ Skipping is enabled and performed with the fn wsp-skipper."
              *skip?* true               ; O_o
              *char=* char=]             ; use case-insensitive fn
      (letfn [(go# []
-               (and ~@(translate-form forms true)))
+               (g ~@forms)
+               ;; (and ~@(translate-form forms true))
+               )
              ~@(for [[_ [name code]] @atomic-parsers]
                  `(~name [] ~code))]
        (if-let [result# (go#)]
