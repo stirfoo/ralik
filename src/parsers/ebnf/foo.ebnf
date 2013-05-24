@@ -1,0 +1,27 @@
+(* comments are ignored, but not nestable as in the spec *)
+
+Fortran 77 continuation line
+    = 5 * ' ', (character - (' ' | '0')), 66 * [character]
+    ;
+Fortran 66 continuation line
+    = character - 'C', 4 * character, character - (' ' | '0'),
+      66 * [character]
+    ;
+aa = 'A';
+bb = 3 * aa, 'b';
+cc = 3 * [aa], 'C';
+dd = {aa}, 'D';
+ee = aa, {aa}, 'E';
+ff = 3 * aa, 3 * [aa], 'F';
+gg = 3 * {aa}, 'D';
+
+ee = {'A'}-, 'E';
+
+gap free symbol
+    = terminal character - {first quote symbol | second quote symbol}
+    | terminal string
+    ;
+
+special sequence
+    = '?', {character - '?'}, '?'
+    ;
