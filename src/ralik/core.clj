@@ -1395,6 +1395,7 @@ If no key found, return nil."
     (apply print orphans)
     (println) (flush)))
 
+;; TODO: specify which keyargs are honored, like :trace?
 (defn- emit-inherited-grammar
   "defgrammar helper to emit an inherited grammar as a function"
   [name doc-string skipper start-rule match-case? print-err? memoize?

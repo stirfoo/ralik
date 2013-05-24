@@ -1,4 +1,6 @@
-(* comments are ignored, but not nestable as in the spec *)
+(* nested comments
+   (* are now *)
+   permitted *)
 
 Fortran 77 continuation line
     = 5 * ' ', (character - (' ' | '0')), 66 * [character]

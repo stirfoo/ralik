@@ -10,17 +10,17 @@ http://en.wikipedia.org/wiki/Extended_Backus%E2%80%93Naur_Form"}
   (:use [clojure.pprint :only [pprint]])
   (:import [ralik RalikException]))
 
+(defgrammar ebnf-skipper
+  "Skip whitespace and possibly nested (* comments *)"
+  [:start-rule Skip :inherit? true]
+  (Skip (skip- (g* (g| #"[ \n\r\t\f\v]" (Comment)))))
+  (Comment (g "(*" (g* (g| (Comment) (g- _ "*)"))) "*)")))
+
 (defgrammar ebnf
   "Parse Extended BNF.
 Return a vector of ralik rules."
   [:start-rule Syntax
-   :skipper #(skip- (g+ (g| #"[ \n\r\t\f\v]"
-                            ;; TODO: make _ in scope here --.
-                            ;;                              |
-                            ;;                 .------------'
-                            ;;                 v
-                            (g "(*" (g* (g- #"(?s)." "*)")) "*)")))
-                    true)
+   :skipper ebnf-skipper                ; an inherited grammar
    :trace? false
    :print-err? true
    :ppfn pprint]
