@@ -180,9 +180,9 @@
 
 (deftest >g+-test
   (testing ">g+ parser"
-    (is (= (tparse "x" (<g 0 (>g+ 0 "x" #(Character/toUpperCase %)) eoi))
+    (is (= (tparse2 "x" (<g 0 (>g+ 0 "x" #(Character/toUpperCase %)) eoi))
            \X))
-    (is (= (tparse "xxx" (<g 0 (>g+ 0 "x" #(.toUpperCase (apply str %&)))
+    (is (= (tparse2 "xxx" (<g 0 (>g+ 0 "x" #(.toUpperCase (apply str %&)))
                              eoi))
            "XXX"))))
 
@@ -212,17 +212,17 @@
 
 (deftest >g?-test
   (testing ">g? parser"
-    (is (= (tparse "+345" (<g 0 (>g? #"[+-]" {"+" '+
+    (is (= (tparse2 "+345" (<g 0 (>g? #"[+-]" {"+" '+
                                              "-" '-
                                              :g?-failed :g?-failed})
                              #"\d+" eoi))
            '+))
-    (is (= (tparse "-345" (<g 0 (>g? #"[+-]" {"+" '+
+    (is (= (tparse2 "-345" (<g 0 (>g? #"[+-]" {"+" '+
                                              "-" '-
                                              :g?-failed :g?-failed})
                              #"\d+" eoi))
            '-))
-    (is (= (tparse "345" (<g 0 (>g? #"[+-]" {"+" '+
+    (is (= (tparse2 "345" (<g 0 (>g? #"[+-]" {"+" '+
                                              "-" '-
                                              :g?-failed :g?-failed})
                              #"\d+" eoi))
@@ -399,6 +399,32 @@
        but fail on \\z. Both \\x and \\y will advance *cur-pos*. <rep should
        reset *cur-pos* to the last \\x for subsequent matches.")))
 
+(deftest >rep-test
+  (testing ">rep parser"
+    (is (= (tparse2 "xy" (<g 0 
+                             (>rep 0 \x \y \z identity)
+                             (g+ \x \y)
+                             eoi))
+           []))
+    (is (= (tparse2 "xy" (<g [0 2] 
+                             (>rep 0 \x \y \z identity)
+                             (<g+ \x \y)
+                             eoi))
+           [[] [[\x \y]]]))
+    (is (= (tparse2 "xyzxyzxy" (<g 0 
+                                   (>rep {:l 1 :h 5} \x \y \z identity)
+                                   (g+ \x \y)
+                                   eoi))
+           [[\x \y \z] [\x \y \z]]))
+    (is (= (tparse2 "xyzxyzxy" (<g [0 2] 
+                                   (>rep {:l 1 :h 5} \x \y \z identity)
+                                   (<g+ \x \y)
+                                   eoi))
+           [[[\x \y \z] [\x \y \z]] [[\x \y]]])
+        "Check backtrack. On >rep's third iteration it will match \\x and \\y,
+       but fail on \\z. Both \\x and \\y will advance *cur-pos*. >rep should
+       reset *cur-pos* to the last \\x for subsequent matches.")))
+
 ;; prm, <prm, >prm
 
 (deftest prm-test
@@ -427,62 +453,31 @@
            [[\x [\y \z] \x [\y \z] \x] [\y \q]])
         "Check backtrack.")))
 
-;; case-, >case-, <case-
-
-(deftest case--test
-  (testing "case- parser"
-    (is (tparse2 "FoO" (case- "foo") eoi) "ignore case")
-    (is (tparse2 "foo FOO FoO fOO"
-                 (case- "FOO"
-                        (case+ "FOO"
-                               (case- "foo"
-                                      (case+ "fOO")))) eoi)
-        "nested case-/+")))
-
-;; case+, <case+, >case+
-
-(deftest case+-test
-  (testing "case+ parser"
-    (is (tparse2 "foo" (case+ "foo") eoi) "match case")
-    (is (tparse2 "Foo" (case+ "Foo") eoi) "match case")))
-
-(deftest nested-case+--test
-  (testing "nesting case- and case+"
-    (is (tparse2 "foo FOO FoO fOO"
-                 (case- "FOO"
-                        (case+ "FOO"
-                               (case- "foo"
-                                      (case+ "fOO")))) eoi)
-        "nested case-/+")))
-
-;; skip-, <skip-, >skip-
-
-(deftest skip--test
-  (testing "skip- parser"
-    (is (tparse2 "\n" (skip- "\n") eoi) "skip- to match \\n")
-    (is (tparse2 "\r" (skip- "\r") eoi) "skip- to match \\r")
-    (is (tparse2 "\n\f" (skip- "\n\f") eoi) "skip- to match \\n\\f")
-    (is (tparse2 "
-" (skip- "
-") eoi) "skip- to match a \\n")))
-
-;; skip+, <skip+, >skip+
-;; TODO: ...
-
-
-(deftest nested-skip-+-test
-  (testing "nested skip- and skip+ parsers"
-    (is (tparse2 " foo ba r"
-                 ;; skip off to match the leading space
-                 (skip- " foo"
-                        ;; skip back on to eat the leading space
-                        (skip+ "ba"
-                               ;; skip back off to match the leading space
-                               (skip- " r"))) eoi)
-        "nesed skip+/-")))
+(deftest >prm-test
+  (testing ">prm parser"
+    (is (= (tparse2 "00001111" (<g 0 (>prm \0 \1
+                                           #(Integer/parseInt
+                                             (apply str %&) 2))
+                                   eoi))
+           15))
+    (is (= (tparse2 "0" (<g 0 (>prm \0 \1 vector) eoi))
+           [\0]))
+    (is (= (tparse2 "1" (<g 0 (>prm \0 \1 vector) eoi))
+           [\1]))
+    (is (= (tparse2 "" (<g 0 (>prm \0 \1 vector) eoi))
+           nil))
+    (is (= (tparse2 "x" (<g 0 (>prm \0 \1 vector) eoi))
+           nil))
+    (is (= (tparse2 "xyzxyzxyq"
+                    (<g [0 2]
+                        (>prm (<g \y \z) \x vector)
+                        (<g \y \q)
+                        eoi))
+           [[\x [\y \z] \x [\y \z] \x] [\y \q]])
+        "Check backtrack.")))
 
 ;; <lex, >lex
-;; NOTED: The intent of lex is to return a string so there is no lex parser
+;; NOTE: The intent of lex is to return a string so there is no lex parser
 
 (deftest <lex-test
   (testing "Return-the-matched-text operator: <lex"
@@ -506,20 +501,36 @@
             "/* foo */" (<lex [1 3] "/*" (g+ (g- _ "*/")) "*/"))
            " foo */"))))
 
+(deftest >lex-test
+  (testing ">lex parser"
+    (is (= (tparse2 "3.3" (<g 0 (>lex \3 \. \3 Double/parseDouble) eoi))
+           3.3))
+    (is (= (tparse2 ".3" (<g 0 (>lex (g? \3) \. \3 Double/parseDouble)
+                            eoi))
+           0.3))
+    (is (= (tparse2 ".3" (<g 0 (>lex [1 3] (g? \3) \. \3 Double/parseDouble)
+                            eoi))
+           0.3))))
+
 ;; kw, <kw, >kw
+
+(defatomic :kw-term (match #"[a-zA-Z][a-zA-Z0-9_]*"))
+
+(deftest kw-test
+  (testing "kw parser"
+    (is (tparse2 "foo" (g (kw "foo") eoi)))
+    (is (tparse2 "foo" (g (kw foo) eoi)))
+    (is (tparse2 "foo" (g (kw :foo) eoi)))
+    (is (not (tparse2 "foobar" (g (kw "foo") eoi))))
+    (is (not (tparse2 "foobar" (g (kw foo) eoi))))
+    (is (not (tparse2 "foobar" (g (kw :foo) eoi))))))
 
 (deftest <kw-test
   (testing "<kw parser"
-    (is (= (tparse2 "float"
-                    (<g 0
-                        (<kw :float)
-                        eoi))
+    (is (= (tparse2 "float" (<g 0 (<kw :float) eoi))
            "float")
         "match float return \"float\"")
-    (is (= (tparse2 "FLOAT"
-                    (<g 0
-                        (case- (<kw :float))
-                        eoi))
+    (is (= (tparse2 "FLOAT" (<g 0 (case- (<kw :float)) eoi))
            "FLOAT")
         "match float return the actual string matched \"FLOAT\"")
     (is (= (tparse2 "float" (<g 0 (<kw "float") eoi)) "float")
@@ -529,17 +540,209 @@
     (is (= (tparse2 "float" (<g 0 (<kw float) eoi)) "float")
         "match with a symbol")))
 
+(deftest >kw-test
+  (testing ">kw parser"
+    (is (= (tparse2 "float" (<g 0 (>kw :float symbol) eoi))
+           'float)
+        "match float return the symbol float")))
+
 ;; kws, <kws, >kws
 
-(deftest <kws-test
+(deftest kws-test
   (testing "kws parser"
-    (is (= (tparse2 "float" (<g 0 (<kws int char float long) eoi))
-           "float"))
-    (is (= (tparse2 "float" (<g 0 (<kws :int :char :float :long) eoi))
-           "float"))
-    (is (= (tparse2 "float" (<g 0 (<kws "int" "char" "float" "long") eoi))
-           "float"))))
+    (is (tparse2 "boolean" (g (kws :bool :boolean) eoi)))
+    (is (not (tparse2 "booleans" (g (kws :bool :boolean) eoi))))))
 
+(deftest <kws-test
+  (testing "<kws parser"
+    (is (= (tparse2 "boolean" (<g 0 (<kws int char float long boolean) eoi))
+           "boolean"))
+    (is (= (tparse2 "boolean" (<g 0 (<kws :int :char :float :long :boolean)
+                                  eoi))
+           "boolean"))
+    (is (= (tparse2 "boolean" (<g 0 (<kws "int" "char" "float" "long"
+                                          "boolean")
+                                  eoi))
+           "boolean"))
+    (is (not= (tparse2 "booleans" (<g 0 (<kws int char float long boolean)
+                                      eoi))
+           "boolean"))
+    (is (not= (tparse2 "booleansn" (<g 0 (<kws :int :char :float :long
+                                               :boolean)
+                                  eoi))
+           "boolean"))
+    (is (not= (tparse2 "booleans" (<g 0 (<kws "int" "char" "float" "long"
+                                          "boolean")
+                                  eoi))
+           "boolean"))))
+
+(deftest >kws-test
+  (testing ">kws parser"
+    (is (= (tparse2 "boolean" (<g 0 (>kws int char float long boolean symbol)
+                                  eoi))
+           'boolean))
+    (is (= (tparse2 "boolean" (<g 0 (>kws :int :char :float :long :boolean
+                                          symbol)
+                                  eoi))
+           'boolean))
+    (is (= (tparse2 "boolean" (<g 0 (>kws "int" "char" "float" "long"
+                                          "boolean" symbol)
+                                  eoi))
+           'boolean))))
+
+;; <sym, >sym
+;; NOTE: the intent of <sym and >sym is to return a symbol so there is no sym
+
+(deftest <sym-test
+  (testing "<sym parser"
+    (is (= (tparse2 "foo" (<g 0 (<sym #"[a-zA-Z][a-zA-Z0-9_]*") eoi))
+           'foo))
+    (is (= (tparse2 "foo" (<g 0 (<sym 0 #"[a-zA-Z][a-zA-Z0-9_]*") eoi))
+           'foo))
+    (is (= (tparse2 "foo" (<g 0 (<sym 0 #"[a-zA-Z]" #"[a-zA-Z0-9_]*") eoi))
+           'f))
+    (is (= (tparse2 "xyz" (<g 0 (<sym \x \y \z) eoi))
+           'xyz))
+    (is (= (tparse2 "xyz" (<g 0 (<sym 2 \x \y \z) eoi))
+           'z))
+    (is (= (tparse2 "*" (<g 0 (<sym #"[*/+-]") eoi))
+           '*))))
+
+(deftest >sym-test
+  (testing ">sym parser"
+    (is (= (tparse2 "foo" (<g 0 (>sym #"[a-zA-Z][a-zA-Z0-9_]*" identity) eoi))
+           'foo))
+    (is (= (tparse2 "foo" (<g 0 (>sym 0 #"[a-zA-Z][a-zA-Z0-9_]*" identity)
+                              eoi))
+           'foo))
+    (is (= (tparse2 "foo" (<g 0 (>sym 0 #"[a-zA-Z]" #"[a-zA-Z0-9_]*" identity)
+                              eoi))
+           'f))
+    (is (= (tparse2 "xyz" (<g 0 (>sym \x \y \z identity) eoi))
+           'xyz))
+    (is (= (tparse2 "xyz" (<g 0 (>sym 2 \x \y \z identity) eoi))
+           'z))
+    (is (= (tparse2 "*" (<g 0 (>sym #"[*/+-]" identity) eoi))
+           '*))))
+
+;; case-, <case-, >case-
+
+(deftest case--test
+  (testing "case- parser"
+    (is (tparse2 "FoO" (case- "foo") eoi))
+    (is (tparse2 "X" (case- \x) eoi))))
+
+(deftest <case--test
+  (testing "<case- parser"
+    (is (= (tparse2 "FoO" (<g 0 (<case- "foo") eoi))
+           ["FoO"]))
+    (is (= (tparse2 "FoO" (<g 0 (<case- 0 "foo") eoi))
+           "FoO"))
+    (is (= (tparse2 "X" (<g 0 (<case- \x) eoi))
+           [\X]))
+    (is (= (tparse2 "X" (<g 0 (<case- 0 \x) eoi))
+           \X))))
+
+(deftest >case--test
+  (testing "<case- parser"
+    (is (= (tparse2 "FoO" (<g 0 (>case- "foo" identity) eoi))
+           "FoO"))
+    (is (= (tparse2 "FoO" (<g 0 (>case- 0 "foo" identity) eoi))
+           "FoO"))
+    (is (= (tparse2 "X" (<g 0 (>case- \x identity) eoi))
+           \X))
+    (is (= (tparse2 "X" (<g 0 (>case- 0 \x identity) eoi))
+           \X))))
+
+;; case+, <case+, >case+
+
+(deftest case+-test
+  (testing "case+ parser"
+    (is (tparse2 "foo" (case+ "foo") eoi))
+    (is (tparse2 "Foo" (case+ "Foo") eoi))
+    (is (not (tparse2 "Foo" (case+ "foo") eoi)))))
+
+(deftest <case+-test
+  (testing "<case+ parser"
+    (is (= (tparse2 "foo" (<g 0 (<case+ "foo") eoi))
+           ["foo"]))
+    (is (= (tparse2 "Foo" (<g 0 (<case+ "Foo") eoi))
+           ["Foo"]))
+    (is (= (tparse2 "foo" (<g 0 (<case+ \f \o \o) eoi))
+           [\f \o \o]))
+    (is (= (tparse2 "Foo" (<g 0 (<case+ 0 \F \o \o) eoi))
+           \F))))
+
+(deftest >case+-test
+  (testing ">case+ parser"
+    (is (= (tparse2 "foo" (<g 0 (>case+ "foo" identity) eoi))
+           "foo"))
+    (is (= (tparse2 "Foo" (<g 0 (>case+ "Foo" identity) eoi))
+           "Foo"))
+    (is (= (tparse2 "foo" (<g 0 (>case+ \f \o \o vector) eoi))
+           [\f \o \o]))
+    (is (= (tparse2 "Foo" (<g 0 (>case+ 0 \F \o \o identity) eoi))
+           \F))))
+
+;; skip-, <skip-, >skip-
+
+(deftest skip--test
+  (testing "skip- parser"
+    (is (tparse2 "\n" (skip- "\n") eoi) "skip- to match \\n")
+    (is (tparse2 "\r" (skip- "\r") eoi) "skip- to match \\r")
+    (is (tparse2 "\n\f" (skip- "\n\f") eoi) "skip- to match \\n\\f")
+    (is (tparse2 "
+" (skip- "
+") eoi) "skip- to match a \\n")))
+
+(deftest <skip--test
+  (testing "<skip- parser"
+    (is (= (tparse2 "\n foo" (<g 0 (<skip- "\n" " foo") eoi))
+           [\newline " foo"])
+        "\"\\n\" is translated to (match \\newline)")))
+
+(deftest >skip--test
+  (testing ">skip- parser"
+    (is (= (tparse2 "\n foo" (<g 0 (>skip- "\n" " foo" vector) eoi))
+           [\newline " foo"]))))
+
+;; skip+, <skip+, >skip+
+;; TODO: ...
+
+(deftest skip+-test
+  (testing "skip+ parser"
+    (is (tparse2 "   foo" (g (skip+ "foo") eoi)))
+    (is (tparse2 "foo   " (g (skip+ "foo") eoi)))
+    (is (tparse2 "   foo   " (g (skip+ "foo") eoi)))))
+
+(deftest <skip+-test
+  (testing "<skip+ parser"
+    (is (= (tparse2 "   foo" (<g 0 (<skip+ "foo") eoi))
+           ["foo"]))
+    (is (= (tparse2 "foo   " (<g 0 (<skip+ 0 "foo") eoi))
+           "foo"))
+    (is (= (tparse2 "   foo   " (<g 0 (<skip+ [0 2] "foo") eoi))
+           ["foo"]))))
+
+(deftest >skip+-test
+  (testing ">skip+ parser"
+    (is (= (tparse2 "   foo" (<g 0 (>skip+ "foo" identity) eoi))
+           "foo"))
+    (is (= (tparse2 "foo   " (<g 0 (>skip+ 0 "foo" identity) eoi))
+           "foo"))
+    (is (= (tparse2 "   foo   " (<g 0 (>skip+ [0 2] "foo" vector) eoi))
+           ["foo"]))))
+
+(deftest nested-skip-+-test
+  (testing "nested skip- and skip+ parsers"
+    (is (tparse2 " foo ba r"
+                 ;; skip off to match the leading space
+                 (skip- " foo"
+                        ;; skip back on to eat the leading space
+                        (skip+ "ba"
+                               ;; skip back off to match the leading space
+                               (skip- " r"))) eoi)
+        "nesed skip+/-")))
 
 ;; [X] match
 ;; [X] wsp-skipper
@@ -571,32 +774,35 @@
 ;; [X] <g_
 ;; [X] >g_
 ;; [X]  g||
-;; [ ] <g||
-;; [ ] >g||
+;; [X] <g||
+;; [X] >g||
 ;; [X]  rep
 ;; [X] <rep
-;; [ ] >rep
+;; [X] >rep
 ;; [X]  prm
 ;; [X] <prm
-;; [ ] >prm
+;; [X] >prm
 ;;      lex   N/A
 ;; [X] <lex
-;; [ ] >lex
-;; [ ]  kw
+;; [X] >lex
+;; [X]  kw
 ;; [X] <kw
-;; [ ] >kw
-;; [ ]  kws
+;; [X] >kw
+;; [X]  kws
 ;; [X] <kws
-;; [ ] >kws
+;; [X] >kws
+;;      sym   N/A
+;; [X] <sym
+;; [X] >sym
 ;; [X]  case-
-;; [ ] <case-
-;; [ ] >case-
+;; [X] <case-
+;; [X] >case-
 ;; [X]  case+
-;; [ ] <case+
-;; [ ] >case+
+;; [X] <case+
+;; [X] >case+
 ;; [X]  skip-
-;; [ ] <skip-
-;; [ ] >skip-
-;; [ ]  skip+
-;; [ ] <skip+
-;; [ ] >skip+
+;; [X] <skip-
+;; [X] >skip-
+;; [X]  skip+
+;; [X] <skip+
+;; [X] >skip+

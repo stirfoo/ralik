@@ -406,8 +406,8 @@ must be in this set"}
 ;; -------------------------------------------------------
 
 (defmacro g
-  "Return a non-nil value if forms match. This macro performs the duty of the
-PEG group operator (). Return the result of the last form in forms or nil as
+  "Return a non-nil value if forms match. This macro performs the duty of a 
+PEG sequence. Return the result of the last form in forms or nil as
 soon as a form in forms returns nil.
 
 Example:
@@ -547,7 +547,10 @@ any order.
 and :h are optional and will be replaced by 0 and Integer/MAX_VALUE
 respectively.
 
-Examples:
+NOTE: m is evaluated at runtime so it may be a var or expression evaluable
+      within lexical scope of the expansion.
+
+Examples (some are nonsensical, but accepted):
   (rep 3 \\x)           ; match an \\x exactly 3 times
   (rep 0 \\x)           ; (g? \\x)
   (rep {:l 3} \\x)      ; match an \\x at least 3 times
@@ -568,6 +571,30 @@ Examples:
                  (= h# 0))))
          (throw (RalikException. (str "rep: (<= 0 min max) failed")))))
      (throw (RalikException. "first arg to rep must be an integer or map"))))
+
+(defmacro kw
+  "Match the given keyword.
+
+The keyword must be an (unquoted) symbol, a string, or a clojure keyword. Its
+string name will be used to match. The atomic parser :kw-term is used to
+define the code that matches characters that cannot IMMEDIATELY follow the
+keyword. This is generally the set of characters that define a valid keyword
+for your domain.
+
+ (<kw :foo) will not match \"foobar\".
+
+ (:kw-term @atomic-parsers) to see its current value"
+  [kword]
+  `(g ~(name kword) (skip- (g! :kw-term))))
+
+(defmacro kws
+  "Match as the kw parser, but allows mutliple choices.
+Each keyword must be castable to clojure.lang.Named"
+  [kword & kwords]
+  `(g| (g ~(name kword) (skip- (g! :kw-term)))
+       ~@(map (fn [x]
+                `(g ~(name x) (skip- (g! :kw-term))))
+              kwords)))
 
 (defmacro g||
   "Match form1 or form2, or form1 followed by form2
@@ -667,7 +694,9 @@ Return a list."
 If form in an integer return the result of the nth form in forms.
 If form is the vector [n,m], return the result of the nth (inclusive) to
 mth (exclusive) forms as a vector.
-Else, return the result of all forms as a vector."
+Else, return the result of all forms as a vector.
+NOTE: The index values must be literal integers. They are evaluated at compile
+      time."
   [form & forms]
   (cond
    ;; return the result of the nth form
@@ -972,6 +1001,15 @@ mth (exclusive) forms. Else, return the string matched by all forms."
           (when res#
             (subs *text-to-parse* start# *cur-pos*)))))))
 
+;; TODO: rethink this and <kw
+(defmacro <sym
+  "Collect all the text matched by forms and apply symbol.
+This is a more general form of the >kw parser which only allows strings,
+keywords or symbols as forms: (>kw :foo symbol). This parser will return
+anything clojure's symbol can handle."
+  [form & forms]
+  `(>lex ~form ~@forms symbol))
+
 (defmacro <skip-
   [form & forms]
   `(binding [*skip?* false]
@@ -1030,47 +1068,32 @@ mth (exclusive) forms. Else, return the string matched by all forms."
 
 (defmacro >g-
   [true-form false-form f]
-  `(when-let [res# (<g- ~true-form ~false-form)]
-     (if (vector? res#)
-       (apply ~f res#)
-       (~f res#))))
+  (forward-parser-helper 'when-let '<g- true-form (list false-form f)))
 
 (defmacro >g_
   "Collect the result of forms as <g_ and call f with them."
   ([form separator f]
-     `(when-let [res# (<g_ ~form ~separator)]
-        (if (vector? res#)
-          (apply ~f res#)
-          (~f res#))))
+     (forward-parser-helper 'when-let '<g_ form (list separator f)))
   ([i form separator f]
-     `(when-let [res# (<g_ ~i ~form ~separator)]
-        (if (vector? res#)
-          (apply ~f res#)
-          (~f res#)))))
+     (forward-parser-helper 'when-let '<g_ i (list form separator f))))
 
 (defmacro >g||
   "Same as <g|| except call f with the successful result"
   ([form1 form2 f]
-     `(when-let [res# (<g|| ~form1 ~form2)]
-        (if (vector? res#)
-          (apply ~f res#)
-          (~f res#))))
+     (forward-parser-helper 'when-let '<g|| form1 (list form2 f)))
   ([i form1 form2 f]
-     `(when-let [res# (<g|| ~i ~form1 ~form2)]
-        (if (vector? res#)
-          (apply ~f res#)
-          (~f res#)))))
+     (forward-parser-helper 'when-let '<g|| i (list form1 form2 f))))
 
 (defmacro >prm
   [form & forms+f]
   (forward-parser-helper 'when-let '<prm form forms+f))
 
 (defmacro >rep
+  "Same as <rep except call f with the successful result.
+NOTE: f will always recieve exactly one argument, a possibly empty vector."
   [m form & forms+f]
   `(when-let [res# (<rep ~m ~form ~@(butlast forms+f))]
-     (if (vector? res#)
-       (apply ~(last forms+f) res#)
-       (~(last forms+f) res#))))
+     (~(last forms+f) res#)))
 
 (defmacro >kw
   [kword f]
@@ -1086,6 +1109,10 @@ mth (exclusive) forms. Else, return the string matched by all forms."
   [form & forms+f]
   `(when-let [res# (<lex ~form ~@(butlast forms+f))]
      (~(last forms+f) res#)))
+
+(defmacro >sym
+  [form & forms+f]
+  (forward-parser-helper 'when-let '<sym form forms+f))
 
 (defmacro >skip-
   [form & forms+f]
