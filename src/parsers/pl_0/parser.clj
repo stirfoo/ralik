@@ -2,30 +2,17 @@
 ;;;
 ;;; Sunday, May  26 2013
 
-(ns ^{:doc "Define a PL-0 parser/evaluator.
+(ns ^{:doc "Define a PL/0 parser/evaluator.
 http://en.wikipedia.org/wiki/PL/0"}
   parsers.pl-0.parser
   (:use ralik.core)
   (:use [clojure.pprint :only [pprint]])
   (:import [ralik RalikException]))
 
-(def opmap {"=" '=
-            "#" 'not=
-            "<=" '<=
-            "<" '<
-            ">=" '>=
-            ">" '>
-            "+" '+
-            "-" '-
-            "*" '*
-            "/" 'quot
-            "!" 'println
-            "?" '(Integer/parseInt (read-line))
-            "odd" 'odd?
-            "if" 'when
-            "while" 'while
-            "" :empty
-            :g?-failed :empty})
+(def opmap {"=" '=, "#" 'not=, "<=" '<=, "<" '<, ">=" '>=, ">" '>, "+" '+,
+            "-" '-, "*" '*, "/" 'quot, "!" 'println,
+            "?" '(Integer/parseInt (read-line)),"odd" 'odd?, "if" 'when,
+            "while" 'while, "" :empty, :g?-failed :empty})
 
 (defn getop
   [x]
@@ -38,13 +25,13 @@ http://en.wikipedia.org/wiki/PL/0"}
 (def reserved-word? #{"const" "var" "procedure" "call" "begin" "end" "if"
                       "then" "while" "do" "odd"})
 
-(defrecord Constant [name value])
+(defrecord PL0Const [name value])
 
 (defn vset
   "Handle x := y statement."
   [x y]
   (cond
-   (= (type x) Constant) (throw (Exception.
+   (= (type x) PL0Const) (throw (Exception.
                                  (str "PL/0 can't assign to constant `"
                                       (:name x) "'")))
    (var? x) (var-set x y)
@@ -55,10 +42,16 @@ http://en.wikipedia.org/wiki/PL/0"}
 Called each time a var or constant is referenced."
   [x name]
   (cond
-   (var? x) (var-get x)
-   (= (type x) Constant) (:value x)
+   (var? x) (let [value (var-get x)]
+              (if (nil? value)
+                (throw (Exception. (str "PL/0 `" name
+                                        "' has not been assigned a value")))
+                value))
+   (= (type x) PL0Const) (:value x)
    :else (throw (Exception. (str "PL/0 undefined var or constant `"
                                  name "'")))))
+
+(defatomic :kw-term (match #"[a-zA-Z0-9]"))
 
 (defgrammar pl-0-skipper
   "Skip whitespace and (* style *) comments."
@@ -90,12 +83,12 @@ Called each time a var or constant is referenced."
                             (concat y [x])))
                         (first x)
                         (next x)))))
-  (ConstExpr (>g 1 (kw :const) (<g_ 0 (>g (Ident) "=" (Num)
+  (ConstExpr (>g 1 (kw :const) (<g_ 0 (>g (Ident) "=" uint10
                                           #(vector %1 %3))
                                     ",")
                  ";"
                  #(list 'let (into [] (mapcat (fn [[x y]]
-                                                [x (Constant. (name x) y)])
+                                                [x (PL0Const. (name x) y)])
                                               %&)))))
   (VarExpr (>g 1 (kw :var) (<g_ 0 (Ident) ",") ";"
                #(list 'with-local-vars
@@ -143,11 +136,10 @@ Called each time a var or constant is referenced."
                         (list op x y))
                       %&)))
   (Factor (<g| (>g (Ident) #(list vget % (name %)))
-               (Num)
+               uint10
                (<g 1 "(" (Expression) ")")
                (>g (>g #"[+-]" getop) (Factor)
                    #(list %1 %2))))
   (Ident (>g #"[a-zA-Z][a-zA-Z0-9]*"
              #(when-not (reserved-word? (.toLowerCase %))
-                (symbol %))))
-  (Num (>lex #"\d+" Integer/parseInt)))
+                (symbol %)))))
