@@ -1,0 +1,13 @@
+
+CONST a=1, b=2;
+VAR c, d, e;
+PROCEDURE foo;
+CONST f=11, g=12;
+VAR h, i, j;
+    PROCEDURE bar;			 (* nested procedure *)
+    CONST xxx=44;
+    h := 3;
+BEGIN
+a := 44;
+END;
+.
