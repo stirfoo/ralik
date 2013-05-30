@@ -1,0 +1,39 @@
+# oberon_0.peg
+# Monday, May 27 2013
+# Based on Wirth's Compiler Construction
+
+Module <- 'MODULE' Ident ';' Decls ('BEGIN' StatementSeq)? 'END' Ident '.'
+Decls <- ConstDecl? TypeDecl? VarDecl? (ProcDecl ';')*
+ConstDecl <- 'CONST' (Ident '=' Expr ';')*
+TypeDecl <- 'TYPE' (Ident '=' Type ';')*
+VarDecl <- 'VAR' (IdentList ':' Type ';')* 
+ProcDecl <- ProcHeading ';' ProcBody
+ProcHeading <- 'PROCEDURE' Ident FormalParms?
+ProcBody <- Decls ('BEGIN' StatementSeq)? 'END' Ident
+FormalParms <- '(' (FPSect (';' FPSect)*)? ')'
+FPSect <- 'VAR'? IdentList ':' Type
+Type <- Ident / ArrayType / RecordType
+RecordType <- 'RECORD' FieldList? (';' FieldList?)* 'end'
+FieldList <- IdentList ':' Type
+ArrayType <- 'ARRAY' Expr 'OF' Type
+IdentList <- Ident (',' Ident)*
+StatementSeq <- Statement? (';' Statement?)*
+Statement <- Assign / ProcCall / IfStatement / WhileStatement
+WhileStatement <- 'WHILE' Expr 'DO' StatementSeq 'END'
+IfStatement <- 'IF' Expr 'THEN' StatementSeq
+                ElsifStatement*
+		ElseStatement?
+		'END'
+ElsifStatement <- 'ELSIF' Expr 'THEN' StatementSeq
+ElseStatement <- 'ELSE' StatementSeq
+ProcCall <- Ident Selector* (ActualParms)?
+ActualParms <- '(' (Expr (',' Expr)*)? ')'
+Assign <- Ident Selector* ':=' Expr
+Expr <- SimpleExpr (('=' / '#' / '<=' / '<' / '>=' / '>') SimpleExpr)?
+SimpleExpr <- [+-]? Term (([+-] / 'OR') Term)*
+Term <- Factor (('*' / 'DIV' / 'MOD' / '&') Factor)*
+Factor <- Ident Selector* / Num / '(' Expr ')' / '~' Factor
+Selector <- '.' Ident / '[' Expr ']'
+Num <- [0-9] [0-9]*
+Ident <- [a-zA-Z] [a-zA-Z0-9]*
+

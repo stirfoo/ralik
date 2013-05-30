@@ -1,12 +1,13 @@
 MODULE Foo;
-
-    VAR x: RECORD y, z: INTEGER;
-        a: ARRAY 3 OF ARRAY 3 OF ARRAY 3 OF FLOAT
-	END;
-             
-    BEGIN
-      x.y := 42;
-      x.z := 99;
-      Print(a[0][0][0]);
-	
+    CONST n=10;
+    (* TYPE T = ARRAY N OF INTEGER; *)
+    (* VAR a: T; b: BOOL; c: INTEGER; *)
+    TYPE R = RECORD f, g: INTEGER; END;
+         M4X4 = ARRAY 4 OF ARRAY 4 OF INTEGER;
+    VAR x: INTEGER;
+        a: ARRAY 10 OF INTEGER;
+     r, s: R;
+    PROCEDURE Foo;
+    CONST w=99;
+    END Foo;
 END Foo.

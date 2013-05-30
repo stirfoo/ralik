@@ -90,7 +90,7 @@ Utility
 "}
   ralik.core
   (:use [clojure.set])
-  (:import [ralik RalikException CutException]))
+  (:import [ralik RalikException CutException ParserException]))
 
 ;; ------------
 ;; Dynamic Vars
@@ -400,9 +400,9 @@ must be in this set"}
 ;; 
 ;; Parser       Purpose                       Peg Syntax  
 ;; -------------------------------------------------------
-;; p            sequence                      e1 e2 ... en
-;; p*           zero or more                  e*
-;; p|           ordered choice                e1 / e2
+;; g            sequence                      e1 e2 ... en
+;; g*           zero or more                  e*
+;; g|           ordered choice                e1 / e2
 ;; -------------------------------------------------------
 
 (defmacro g
@@ -469,14 +469,14 @@ Example to match \\x, or \\y, or a digit followed by \\i:
 ;;
 ;; Parser       Purpose                          Peg Syntax
 ;; --------------------------------------------------------
-;; p?           optional                         e / ""
-;; p&           positive look ahead              &e
-;; p!           negative look ahead              !e
-;; p+           one or more                      e e*
+;; g?           optional                         e / ""
+;; g&           positive look ahead              &e
+;; g!           negative look ahead              !e
+;; g+           one or more                      e e*
 ;; ch           match any single character       .
-;; p_           interspersed list of items       e1 (e2 e1)*
-;; p-           match all but...                 !e1 e2
-;; p||          a or b, or a followed by b       (e1 e2?) / e2
+;; g_           interspersed list of items       e1 (e2 e1)*
+;; g-           match all but...                 !e1 e2
+;; g||          a or b, or a followed by b       (e1 e2?) / e2
 ;; rep          like regexp x{M,N}               N/A
 ;; prm          permutation                      (e1 / e2)+
 ;; skip-        disable skipping                 N/A
@@ -581,7 +581,7 @@ define the code that matches characters that cannot IMMEDIATELY follow the
 keyword. This is generally the set of characters that define a valid keyword
 for your domain.
 
- (<kw :foo) will not match \"foobar\".
+ (<kw :foo) will not match \"foobar\" but (<g \"foo\") will.
 
  (:kw-term @atomic-parsers) to see its current value"
   [kword]
@@ -1183,8 +1183,16 @@ offset->line-number. Output is printed to the current value of *out*"
   [m]
   (let [spacing (apply str (repeat (:column m) " "))]
     ;; the hint is crap
-    (println "Parse Error line" (:line m) (or (:hint m) ""))
+    (printf "Parse Error line %d: %s\n" (:line m) (or (:hint m) ""))
     (printf "%s\n%s^\n" (:text m) spacing)))
+
+(defn parse-error
+  "Call from within a grammar.
+This will immediately exit the parser."
+  [pos msg]
+  (spep (merge (offset->line-number pos *text-to-parse*)
+               {:hint msg}))
+  (throw (ParserException.)))
 
 ;; ----------------
 ;; Grammar Creation
@@ -1289,13 +1297,15 @@ is printed."
 Each cache map key is: [position-before-parse rule-name].
 Each value is: [parse-result position-after-parse]"
   [rule memoize?]
-  (if memoize?
+  (if (or (= memoize? true)
+          (and (set? memoize?)
+               (memoize? (first rule))))
     ;; cache the result
     (let [rule-name (first rule)]
       `(~rule-name
 	~(second rule)          ; ARG-RULE will ensure this is always a vector
 	(if-let [[cached-result# pos#]
-		 (get @*grammar-rule-cache* ['~rule-name *cur-pos*])]
+		 (@*grammar-rule-cache* ['~rule-name *cur-pos*])]
 	  ;; return the cached result
 	  (do (set! *cur-pos* pos#) cached-result#)
 	  ;; else parse and cache the result
@@ -1364,17 +1374,7 @@ If no key found, return nil."
   (if-let [bad-key (find-bad-keyarg key-args [:skipper :start-rule
                                               :match-case? :print-err?
                                               :memoize? :trace? :inherit?
-                                              :profile? :ppfn])
-           ;; (loop [ks (keys key-args)]
-           ;;           (if (nil? ks)
-           ;;             nil
-           ;;             (if (some #{(first ks)} [:skipper :start-rule
-           ;;                                      :match-case? :print-err?
-	   ;;      				:memoize? :trace? :inherit?
-	   ;;      				:profile? :ppfn])
-           ;;               (recur (next ks))
-           ;;               (first ks))))
-           ]
+                                              :profile? :ppfn])]
     (throw (RalikException.
             (str "unknown defgrammar key argument: " bad-key))))
   (when-not (symbol? name)
@@ -1395,19 +1395,14 @@ If no key found, return nil."
     (apply print orphans)
     (println) (flush)))
 
-;; TODO: specify which keyargs are honored, like :trace?
 (defn- emit-inherited-grammar
   "defgrammar helper to emit an inherited grammar as a function"
-  [name doc-string skipper start-rule match-case? print-err? memoize?
-   trace? profile? rule rules]
+  [name doc-string start-rule trace? rule rules]
   `(defn ~name
      ~doc-string
      []
      (letfn [~@(map (fn [r]
-                      (defgrammar-helper r (and memoize?
-                                                (not= (first r)
-                                                      start-rule))
-                        trace? profile?))
+                      (defgrammar-helper r false trace? false))
                  (conj rules rule))
              ;; expand all atomic parser code
              ~@(for [[_ [name code]] @atomic-parsers]
@@ -1421,42 +1416,44 @@ If no key found, return nil."
   `(defn ~name
      ~doc-string
      [text#]
-     (binding [*text-to-parse* text#,
-               *cur-pos* 0,
-               *err-pos* 0,
-               *err-msg* "",
-               *end-pos* (count text#),
-               *skipper* ~skipper,
-               *skip?* ~(and skipper true),
-               *char=* ~(if match-case?
-                          'char-case=
-                          'char=)
-               *grammar-rule-cache* (atom {})
-               *trace-indent* 2
-               *trace-depth* -2
-               *rule-profile-map* (atom {})]
-       (letfn [~@(map #(defgrammar-helper % (and memoize?
-                                                 (not= (first %)
-                                                       start-rule))
-                         trace? profile?)
-                   (conj rules rule))
-               ;; Expand atomic parsers to local fns so they no longer have
-               ;; to be expanded at each point in the grammar.  This will
-               ;; allow the body of defatomic to freely use ralik
-               ;; core parsers instead of low-level character parsers. The
-               ;; atomic parsers body will only be expanded once, in the
-               ;; function body.
-               ;; TODO: better way to handle :kw-term
-               ~@(for [[_ [name code]] @atomic-parsers]
-                   `(~name [] ~code))]
-         (if-let [result# (~start-rule)]
-           (do
-             (when ~profile?
-               (print-profile-info))
-             (~ppfn result#))
-           (when ~print-err?
-             (spep (assoc (offset->line-number *err-pos* *text-to-parse*)
-                     :hint *err-msg*))))))))
+     (try
+       (binding [*text-to-parse* text#,
+                 *cur-pos* 0,
+                 *err-pos* 0,
+                 *err-msg* "",
+                 *end-pos* (count text#),
+                 *skipper* ~skipper,
+                 *skip?* ~(and skipper true),
+                 *char=* ~(if match-case?
+                            'char-case=
+                            'char=)
+                 *grammar-rule-cache* (atom {})
+                 *trace-indent* 2
+                 *trace-depth* -2
+                 *rule-profile-map* (atom {})]
+         (letfn [~@(map #(defgrammar-helper % (and (not= (first %)
+                                                         start-rule)
+                                                   memoize?)
+                           trace? profile?)
+                     (conj rules rule))
+                 ;; Expand atomic parsers to local fns so they no longer have
+                 ;; to be expanded at each point in the grammar.  This will
+                 ;; allow the body of defatomic to freely use ralik
+                 ;; core parsers instead of low-level character parsers. The
+                 ;; atomic parsers body will only be expanded once, in the
+                 ;; function body.
+                 ;; TODO: better way to handle :kw-term
+                 ~@(for [[_ [name code]] @atomic-parsers]
+                     `(~name [] ~code))]
+           (if-let [result# (~start-rule)]
+             (do
+               (when ~profile?
+                 (print-profile-info))
+               (~ppfn result#))
+             (when ~print-err?
+               (spep (assoc (offset->line-number *err-pos* *text-to-parse*)
+                       :hint *err-msg*))))))
+       (catch ParserException e#))))
 
 ;; TODO: Allow start-rule selection at run time.
 ;;       RESOLVE will not work with functions defined with LETFN.
@@ -1478,9 +1475,11 @@ possibly empty vector of key val pairs:
 |              | Default: false                                              |
 | :print-err?  | true to print a simple parse error message on parse failure |
 |              | Default: false                                              |
-| :memoize?    | true to define a packrat parser where the result of a rule  |
-|              | is cached. This may or may not improve the performance of   |
-|              | parser. It depends on the grammar.                          |
+| :memoize?    | true to define a packrat parser where the result of each    |
+|              | rule is cached. This may or may not improve the performance |
+|              | of parser. It depends on the grammar.                       |
+|              | The value may also be a set in which case only rule names   |
+|              | specified in the set will be memoized.                      |
 |              | Default: false                                              |
 | :trace?      | true to print a trace of the parse to the current value of  |
 |              | *out* as the parser is working                              |
@@ -1491,8 +1490,8 @@ possibly empty vector of key val pairs:
 |              | body of another grammar. If true, this grammar will inherit |
 |              | the state of the calling grammar at the point of the call.  |
 |              | The expanded function will take no arguments instead of the |
-|              | text to parse. All other keys are ignored if :inherit? is   |
-|              | true.                                                       |
+|              | text to parse. All keys except :start-rule and :trace? are  |
+|              | ignored.                                                    |
 |              | Default: false                                              |
 | :ppfn        | Post Parse Function. Call this function on a successful     |
 |              | parse with the parse result as its only argument. The       |
@@ -1548,8 +1547,9 @@ Example:
   (chk-grammar-args name doc-string key-args rule rules start-rule)
   ;; emit code
   (if inherit?
-    (emit-inherited-grammar name doc-string skipper start-rule match-case?
-                            print-err? memoize? trace? profile? rule rules)
+    ;; skipper, match-case?, print-err?, profile?, memoize?, and ppfn are
+    ;; ignored for now...
+    (emit-inherited-grammar name doc-string start-rule trace? rule rules)
     (emit-grammar name doc-string skipper start-rule match-case? print-err?
                   memoize? trace? profile? ppfn rule rules)))
 
