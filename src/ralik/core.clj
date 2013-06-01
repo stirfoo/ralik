@@ -693,13 +693,20 @@ Return a list."
 
 If form in an integer return the result of the nth form in forms.
 0 <= i <= forms-count must hold.
+
 If form is the vector [start, end], return the result of the start (inclusive)
 to end (exclusive) forms as a vector. 0 <= start < end <= forms-count must
 hold.
+If a range of one is specified, [1 2] for example, the range is an implied nth
+selector:
+  (<g [1 2] \\x \\y \\z) is the same as (<g 1 \\x \\y \\z)
+will return \\y, not [\\y].
+
 Else, return the result of all forms as a vector.
 
 If a single form is supplied, return the result of that form:
   (<g \\x) is the same as (<g 0 \\x)
+will return \\x, not [\\x]
 
 NOTE: The index values must be literal integers. They are evaluated at compile
       time."
@@ -716,20 +723,21 @@ NOTE: The index values must be literal integers. They are evaluated at compile
      (throw (Exception. (str "The first argument to <g must be >= 0"
                              ", got: " form))))
    ;; [start, end]
-   ;; TODO: Convert a range difference of one into and nth selector.
-   ;;       (<g [1 2] \x \y \z) => (<g 0 \x \y \z)
    (vector? form)
    (if (and (= (count form) 2)
             (<= 0 (form 0))
             (< (form 0) (form 1)))
-     (let [res (gensym)
-           [form2 & forms2] (collect-form-range (form 0) (form 1) forms res)]
-       `(let [~res (atom [])]
-          (when (g ~form2 ~@forms2)
-            @~res)))
+     (if (= (- (form 1) (form 0)) 1)
+       ;; convert range of 1 to nth selector
+       `(<g ~(form 0) ~@forms)
+       (let [res (gensym)
+             [form2 & forms2] (collect-form-range (form 0) (form 1) forms res)]
+         `(let [~res (atom [])]
+            (when (g ~form2 ~@forms2)
+              @~res))))
      (throw (Exception. (str "The first argument to <g must be a vector of"
-                             " two elements [N, M] where 0 <= N < M holds,"
-                             " got: " form))))
+                             " two elements [start, end] where"
+                             " 0 <= start < end holds, got: " form))))
    ;; one form given, dont put its result in a vector.
    (empty? forms) `(<g 0 ~form)
    ;; return the result of all forms as a vector
