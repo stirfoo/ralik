@@ -348,11 +348,11 @@ Return the text/character matched on success else return nil or false"
 ;; Form Translation
 ;; ----------------
 
-(def backtracking-parser? '#{p* p! p& p? p|})
+(def backtracking-parser? '#{g* g! g& g? g| <g|})
 
 (def ^{:doc "Any parser that DIRECTLY calls translate-form or maybe-backtrack
 must be in this set"}
-  translating-parser? '#{case+ case- skip+ skip- g g+ g| g& g_ <g <g+ <g|})
+  translating-parser? '#{g g+ g| g& g_ <g <g+ <g|})
 
 ;; '(\x \y)
 ;; Given that example, translate-form will return:
@@ -412,14 +412,14 @@ soon as a form in forms returns nil.
 
 Example:
   ;; This will fail when \\y fails to match \\q
-  (parse \"xqz\" (g \\x \\y \\z))"
+  (tparse \"xqz\" (g \\x \\y \\z))"
   [form & forms]
   (let [tforms (translate-form (cons form forms) true)]
     (if (> (count tforms) 1)
       `(and ~@tforms)
       (first tforms))))
 
-(defn emit-p*
+(defn emit-g*
   [tforms]
   `(loop [] (if ~tforms (recur) true)))
 
@@ -433,10 +433,10 @@ of forms."
            (seq? form)
            (backtracking-parser? (first form)))
     (let [tforms (translate-form (cons form ()) true)]
-      (emit-p* (if (next tforms)
+      (emit-g* (if (next tforms)
                  `(and ~@tforms)
                  (first tforms))))
-    (emit-p* `(maybe-backtrack ~(cons form forms)))))
+    (emit-g* `(maybe-backtrack ~(cons form forms)))))
 
 (defmacro g|
   "Return a non-nil value when the first alternate matches.
@@ -452,9 +452,9 @@ Example to match \\x, or \\y, or a digit followed by \\i:
            (or ~@(map (fn [cur-form]
                         (if (and (seq? cur-form)
                                  (backtracking-parser? (first cur-form)))
-                          `(or (g ~cur-form)
+                          `(or (g 0 ~cur-form)
                                (when *cut* (throw (CutException.))))
-                          `(or (g ~cur-form)
+                          `(or (g 0 ~cur-form)
                                (if *cut*
                                  (throw (CutException.))
                                  (do (set! *cur-pos* ~old-pos)
@@ -522,9 +522,9 @@ Example:
   "Match form. The result of this match will be the result of this
 parser. Then match form preceded by separator zero or more times.
 Examples:
-  (parse \"1,2,3\" (g_ #\"\\d\" \\,)) => non-nil value, all input matched
-  (parse \"1,2,x\" (g_ #\"\\d\" \\,)) => non-nil value, match |1,2|
-                                    *cur-pos* will be looking at the second ,
+  (tparse \"1,2,3\" (g_ #\"\\d\" \\,)) => non-nil value, all input matched
+  (tparse \"1,2,x\" (g_ #\"\\d\" \\,)) => non-nil value, match |1,2|
+                                     *cur-pos* will be looking at the second ,
 
  (g_ #\"\\d\" \\,) is just a bit shorter form of:
  (g #\"\\d\" (g* \\, #\"\\d\"))"
@@ -536,7 +536,7 @@ Examples:
   "Return a non-nil value if one or more of the parsers in forms matches, in
 any order.
   Example:
-  (parse \"010100001\" (lex (prm \\0 \\1))) => \"010100001\""
+  (tparse \"010100001\" (lex (prm \\0 \\1))) => \"010100001\""
   [form & forms]
   `(g+ (g| ~form ~@forms)))
 
@@ -568,7 +568,7 @@ Examples (some are nonsensical, but accepted):
              (recur (inc n#))
              (or (>= n# l#)
                  (= h# 0))))
-         (throw (RalikException. (str "rep: (<= 0 min max) failed")))))
+         (throw (RalikException. (str "rep: (<= 0 :l :h) failed")))))
      (throw (RalikException. "first arg to rep must be an integer or map"))))
 
 (defmacro kw
@@ -599,9 +599,9 @@ Each keyword must be castable to clojure.lang.Named"
   "Match form1 or form2, or form1 followed by form2
 
 Examples from the boost Spirit documentation. All will match the entire text.
- (tparse \"123.456\" (p|| #\"\\d+\" (p \".\" #\"\\d+\")) (p! (ch)))
- (tparse \"123\" (p|| #\"\\d+\" (p \".\" #\"\\d+\")) (p! (ch)))
- (tparse \".456\" (p|| #\"\\d+\" (p \".\" #\"\\d+\")) (p! (ch)))"
+ (tparse \"123.456\" (g|| #\"\\d+\" (g \".\" #\"\\d+\")) (g! (ch)))
+ (tparse \"123\" (g|| #\"\\d+\" (g \".\" #\"\\d+\")) (g! (ch)))
+ (tparse \".456\" (g|| #\"\\d+\" (g \".\" #\"\\d+\")) (g! (ch)))"
   [form1 form2]
   `(letfn [(f# [] (g ~form2))]
      (g| (g ~form1 (g? (f#)))
@@ -802,12 +802,15 @@ This parser backtracks upon failure."
        (let [~old-pos *cur-pos*]
          (try
            (or ~@(map (fn [cur-form]
-                        `(or
-                          (<g 0 ~@(translate-form (list cur-form) true))
-                          (if *cut*
-                            (throw (CutException.))
-                            (do (set! *cur-pos* ~old-pos)
-                                nil))))
+                        (if (and (seq? cur-form)
+                                 (backtracking-parser? (first cur-form)))
+                          `(or (<g 0 ~cur-form)
+                               (when *cut* (throw (CutException))))
+                          `(or (<g 0 ~cur-form)
+                               (if *cut*
+                                 (throw (CutException.))
+                                 (do (set! *cur-pos* ~old-pos)
+                                     nil)))))
                       (cons form forms)))
            (catch CutException e#
              nil))))))
@@ -849,9 +852,9 @@ followed by a successful form."
   "Match form1 or form2, or form1 followed by form2
 
 Examples from the boost Spirit documentation. All will match the entire text.
- (tparse \"123.456\" (p|| #\"\\d+\" (p \".\" #\"\\d+\")) (p! (ch)))
- (tparse \"123\" (p|| #\"\\d+\" (p \".\" #\"\\d+\")) (p! (ch)))
- (tparse \".456\" (p|| #\"\\d+\" (p \".\" #\"\\d+\")) (p! (ch)))"
+ (tparse \"123.456\" (g|| #\"\\d+\" (g \".\" #\"\\d+\")) (g! (ch)))
+ (tparse \"123\" (g|| #\"\\d+\" (g \".\" #\"\\d+\")) (g! (ch)))
+ (tparse \".456\" (g|| #\"\\d+\" (g \".\" #\"\\d+\")) (g! (ch)))"
   [form1 form2]
   `(letfn [(f# [] (g ~form2))]
      (g| (g ~form1 (g? (f#)))
