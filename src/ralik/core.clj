@@ -1422,17 +1422,19 @@ If no key found, return nil."
 
 (defn- emit-inherited-grammar
   "defgrammar helper to emit an inherited grammar as a function"
-  [name doc-string start-rule trace? rule rules]
+  [name doc-string start-rule skipper trace? rule rules]
   `(defn ~name
      ~doc-string
      []
-     (letfn [~@(map (fn [r]
-                      (defgrammar-helper r false trace? false))
-                 (conj rules rule))
-             ;; expand all atomic parser code
-             ~@(for [[_ [name code]] @atomic-parsers]
-                 `(~name [] ~code))]
-       (~start-rule))))
+     (binding [*skipper* ~skipper
+               *skip?* ~(and skipper true)]
+       (letfn [~@(map (fn [r]
+                        (defgrammar-helper r false trace? false))
+                   (conj rules rule))
+               ;; expand all atomic parser code
+               ~@(for [[_ [name code]] @atomic-parsers]
+                   `(~name [] ~code))]
+         (~start-rule)))))
 
 (defn- emit-grammar
   "defgrammar helper to emit a grammar as a function"
@@ -1442,13 +1444,13 @@ If no key found, return nil."
      ~doc-string
      [text#]
      (try
-       (binding [*text-to-parse* text#,
-                 *cur-pos* 0,
-                 *err-pos* 0,
-                 *err-msg* "",
-                 *end-pos* (count text#),
-                 *skipper* ~skipper,
-                 *skip?* ~(and skipper true),
+       (binding [*text-to-parse* text#
+                 *cur-pos* 0
+                 *err-pos* 0
+                 *err-msg* ""
+                 *end-pos* (count text#)
+                 *skipper* ~skipper
+                 *skip?* ~(and skipper true)
                  *char=* ~(if match-case?
                             'char-case=
                             'char=)
@@ -1572,9 +1574,10 @@ Example:
   (chk-grammar-args name doc-string key-args rule rules start-rule)
   ;; emit code
   (if inherit?
-    ;; skipper, match-case?, print-err?, profile?, memoize?, and ppfn are
+    ;; match-case?, print-err?, profile?, memoize?, and ppfn are
     ;; ignored for now...
-    (emit-inherited-grammar name doc-string start-rule trace? rule rules)
+    (emit-inherited-grammar name doc-string start-rule skipper trace? rule
+                            rules)
     (emit-grammar name doc-string skipper start-rule match-case? print-err?
                   memoize? trace? profile? ppfn rule rules)))
 

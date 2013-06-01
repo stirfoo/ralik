@@ -1,88 +1,78 @@
-;;; parser.clj
+;;; parser2.clj
 ;;;
-;;; Friday, April  6 2012
+;;; Saturday, June  1 2013
 
 (ns ^{:doc "Define a PEG parser as defined in Bryan Ford's
 Parsing Expression Grammars:
-A Recognition-Based Syntactic Foundation"}
-    parsers.peg.parser
+A Recognition-Based Syntactic Foundation
+
+This parser differs from parsers.peg.parser in that a skipper is used and
+terminals are not separate rules. It parses in about half the time."}
+    parsers.peg.parser2
     (:use ralik.core)
     (:import [ralik RalikException])
     (:use [clojure.pprint :only [pprint]]))
 
-(defgrammar peg
-  "Parse a PEG, returning a vector of ralik rules.
-Forward and Collector/Selector parsers, and semantic actions are employed to
-return a useful value. This is done the hard way because this grammar follows
-Ford's original PEG description almost exactly. The grammar handles
-whitespace instead of using a ralik skipper. Only basic ralik parsers are
-used. Also, a PEG has only rudimentary regular expression support. ralik uses
-clojure regular expressions which are great for matching tokens.
+(defgrammar peg-skipper
+  "Skip whitespace and # style comments"
+  [:start-rule Skip
+   :skipper nil                         ; prevent infinite loop
+   :inherit? true]
+  (Skip (g* (g| #"[ \n\r\t\f\v]+"
+                #"(?m)#.*$"))))
 
-The rhs of a rule may be empty: Foo <-. Actually, according to the grammar, a
-Sequence may contain zero or more Prefix expressions. This makes a Sequence
-optional and permits something like: Foo <- / 'x' / / 'y'. In these cases the
-parser will insert an empty string. This will consume no input and return the
-empty string as a match."
+(defgrammar peg
+  "Parse a PEG, returning a vector of ralik rules."
   [:start-rule Grammar
-   :skipper nil                         ; the grammar handles the whitespace
-   :profile? false
-   :trace? false
-   :memoize? true
-   :print-err? true
-   :ppfn identity]
+   :skipper peg-skipper
+   :print-err? true]
   ;; Hierarchical syntax
-  (Grammar (<g 1 (Spacing) (<g+ (Definition)) (EndOfFile)))
-  (Definition (>g (Identifier) (LEFTARROW) (Expression)
+  (Grammar (<g 0 (<g+ (Definition)) eoi))
+  (Definition (>g (Identifier) "<-" (Expression)
                   #(let [[id _ e] %&]
                      (if-not (seq? e) ; rule body must have a top-level parser
                        (list (symbol id) (list 'g e))
                        (list (symbol id) e)))))
-  (Expression (>g (Sequence) (<g* 1 (SLASH) (Sequence))
+  (Expression (>g (Sequence) (<g* 1 "/" (Sequence))
                   #(let [[h & [t]] %&]
                      (if (empty? t)
                        h
                        (list* 'g| h t)))))
-  (Sequence (>g* 0 (Prefix)
+  (Sequence (>g* (Prefix)
                  #(if (empty? %&)
                     (list 'g "")        ; handle empty sequence
                     (let [[p & ps] %&]
                       (if ps            ; group two or more expressions
                         (list* 'g p ps)
                         p)))))
-  (Prefix (>g (<g? (<g| (AND) (NOT))) (Suffix)
+  (Prefix (>g #"[&!]?" (Suffix)
               #(let [[op p] %&]
-                 (if (= op :g?-failed)
+                 (if (empty? op)
                    p
                    (if (and (seq? p)    ; unnest g parsers
                             (= (first p) 'g))
                      (list* (symbol (str "g" op)) (next p))
                      (list (symbol (str "g" op)) p))))))
-  (Suffix (>g (Primary) (<g? (<g| (QUESTION) (STAR) (PLUS)))
+  (Suffix (>g (Primary) #"[?*+]?"
               #(let [[p op] %&]
-                 (if (= op :g?-failed)
+                 (if (empty? op)
                    p
                    (if (and (seq? p)    ; unnest g parsers
                             (= (first p) 'g))
                      (list* (symbol (str "g" op)) (next p))
                      (list (symbol (str "g" op)) p))))))
-  (Primary (<g| (>g 0 (Identifier) (g! (LEFTARROW)) list)
-                (<g 1 (OPEN) (Expression) (CLOSE))
+  (Primary (<g| (>g 0 (Identifier) (g! "<-") list)
+                (<g 1 "(" (Expression) ")")
                 (Literal)
                 (Class)
-                (DOT)))
+                (>g "." (constantly '_))))
   
   ;; Lexical syntax
-  (Identifier (>g [0 2] (IdentStart) (<g* (IdentCont)) (Spacing)
-                  #(let [[x & [y]] %&]
-                     (symbol (apply str x y)))))
-  (IdentStart (<g #"[a-zA-Z_]"))
-  (IdentCont (<g| (IdentStart)
-                  #"[0-9]"))
-  (Literal (>g| (<g 1 "'" (<g* 1 (g! "'") (Char :lit)) "'" (Spacing))
-                (<g 1 \" (<g* 1 (g! \") (Char :lit)) \" (Spacing))
+  (Identifier (>g #"[a-zA-Z_][a-zA-Z0-9_]*" symbol))
+  (Literal (>g| (<g 1 "'" (<skip- (<g* 1 (g! "'") (Char :lit))) "'")
+                (<g 1 \" (<skip- (<g* 1 (g! \") (Char :lit))) \")
                 #(symbol (str "\"" (apply str %&) "\""))))
-  (Class (>g 1 "[" (<g* 1 (g! "]") (Range)) "]" (Spacing)
+  (Class (>g 1 "[" (<skip- (<g* 1 (g! "]") (Range))) "]"
              #(symbol (str "#\"[" (apply str %&) "]\""))))
   (Range (<g| (>g (Char) "-" (g! "]") (Char)
                   #(let [[c1 _ _ c2] %&]
@@ -106,24 +96,7 @@ empty string as a match."
         (>g 1 (g! "\\") _ #(if (= % \")
                              ;;  for ["] 
                              "\\\""
-                             (str %)))))
-
-  (LEFTARROW (g "<-" (Spacing)))
-  (SLASH (g "/" (Spacing)))
-  (AND (<g 0 "&" (Spacing)))
-  (NOT (<g 0 "!" (Spacing)))
-  (QUESTION (<g 0 "?" (Spacing)))
-  (STAR (<g 0 "*" (Spacing)))
-  (PLUS (<g 0 "+" (Spacing)))
-  (OPEN (g "(" (Spacing)))
-  (CLOSE (g ")" (Spacing)))
-  (DOT (>g "." (Spacing) (constantly '_)))
-
-  (Spacing (g* (g| (Space) (Comment))))
-  (Comment (g "#" (g* (g! (EndOfLine)) _)))
-  (Space (g| " " "\t" (EndOfLine)))
-  (EndOfLine (g| "\r\n" "\n" "\r"))
-  (EndOfFile (g! _)))
+                             (str %))))))
 
 (defn peg->ralik
   "Read and parse in-file, a PEG, then write a ralik grammar to out-file.
