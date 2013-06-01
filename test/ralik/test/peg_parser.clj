@@ -2,8 +2,6 @@
   (:use [parsers.peg.parser])
   (:use [clojure.test]))
 
-(def filename (gensym "peg"))
-
 (deftest t1
-  (testing "peg parser"
+  (testing "parse of peg.peg by peg parser =)"
     (is (peg (slurp "src/parsers/peg/peg.peg")))))

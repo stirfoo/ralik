@@ -32,7 +32,7 @@ empty string as a match."
    :print-err? true
    :ppfn identity]
   ;; Hierarchical syntax
-  (Grammar (<g 1 (Spacing) (<g+ 0 (Definition)) (EndOfFile)))
+  (Grammar (<g 1 (Spacing) (<g+ (Definition)) (EndOfFile)))
   (Definition (>g (Identifier) (LEFTARROW) (Expression)
                   #(let [[id _ e] %&]
                      (if-not (seq? e) ; rule body must have a top-level parser
@@ -56,16 +56,16 @@ empty string as a match."
                    p
                    (if (and (seq? p)    ; unnest g parsers
                             (= (first p) 'g))
-                     (list* (symbol (str "g" (first op))) (next p))
-                     (list (symbol (str "g" (first op))) p))))))
+                     (list* (symbol (str "g" op)) (next p))
+                     (list (symbol (str "g" op)) p))))))
   (Suffix (>g (Primary) (<g? (<g| (QUESTION) (STAR) (PLUS)))
               #(let [[p op] %&]
                  (if (= op :g?-failed)
                    p
                    (if (and (seq? p)    ; unnest g parsers
                             (= (first p) 'g))
-                     (list* (symbol (str "g" (first op))) (next p))
-                     (list (symbol (str "g" (first op))) p))))))
+                     (list* (symbol (str "g" op)) (next p))
+                     (list (symbol (str "g" op)) p))))))
   (Primary (<g| (>g 0 (Identifier) (g! (LEFTARROW)) list)
                 (<g 1 (OPEN) (Expression) (CLOSE))
                 (Literal)
@@ -73,10 +73,10 @@ empty string as a match."
                 (DOT)))
   
   ;; Lexical syntax
-  (Identifier (>g [0 2] (IdentStart) (<g* 0 (IdentCont)) (Spacing)
+  (Identifier (>g [0 2] (IdentStart) (<g* (IdentCont)) (Spacing)
                   #(let [[x & [y]] %&]
                      (symbol (apply str x y)))))
-  (IdentStart (<g 0 #"[a-zA-Z_]"))
+  (IdentStart (<g #"[a-zA-Z_]"))
   (IdentCont (<g| (IdentStart)
                   #"[0-9]"))
   (Literal (>g| (<g 1 "'" (<g* 1 (g! "'") (Char :lit)) "'" (Spacing))
@@ -87,7 +87,7 @@ empty string as a match."
   (Range (<g| (>g (Char) "-" (g! "]") (Char)
                   #(let [[c1 _ _ c2] %&]
                      (str c1 \- c2)))
-              (>g 0 (Char) str)))
+              (>g (Char) str)))
   (Char
    [& for-lit]
    (<g| (>g 1 "\\" #"[nrft'\"\[\]\\]" {"n" "\\n"

@@ -635,11 +635,11 @@
 (deftest <case--test
   (testing "<case- parser"
     (is (= (tparse2 "FoO" (<g 0 (<case- "foo") eoi))
-           ["FoO"]))
+           "FoO"))
     (is (= (tparse2 "FoO" (<g 0 (<case- 0 "foo") eoi))
            "FoO"))
     (is (= (tparse2 "X" (<g 0 (<case- \x) eoi))
-           [\X]))
+           \X))
     (is (= (tparse2 "X" (<g 0 (<case- 0 \x) eoi))
            \X))))
 
@@ -665,9 +665,9 @@
 (deftest <case+-test
   (testing "<case+ parser"
     (is (= (tparse2 "foo" (<g 0 (<case+ "foo") eoi))
-           ["foo"]))
+           "foo"))
     (is (= (tparse2 "Foo" (<g 0 (<case+ "Foo") eoi))
-           ["Foo"]))
+           "Foo"))
     (is (= (tparse2 "foo" (<g 0 (<case+ \f \o \o) eoi))
            [\f \o \o]))
     (is (= (tparse2 "Foo" (<g 0 (<case+ 0 \F \o \o) eoi))
@@ -718,7 +718,11 @@
 (deftest <skip+-test
   (testing "<skip+ parser"
     (is (= (tparse2 "   foo" (<g 0 (<skip+ "foo") eoi))
-           ["foo"]))
+           "foo"))
+    (is (= (tparse2 "   foo" (<g 0 (<skip+ 0 "foo") eoi))
+           "foo"))
+    (is (= (tparse2 "foo   " (<g 0 (<skip+ "foo") eoi))
+           "foo"))
     (is (= (tparse2 "foo   " (<g 0 (<skip+ 0 "foo") eoi))
            "foo"))
     (is (= (tparse2 "   foo   " (<g 0 (<skip+ [0 1] "foo") eoi))
@@ -727,6 +731,10 @@
 (deftest >skip+-test
   (testing ">skip+ parser"
     (is (= (tparse2 "   foo" (<g 0 (>skip+ "foo" identity) eoi))
+           "foo"))
+    (is (= (tparse2 "   foo" (<g 0 (>skip+ 0 "foo" identity) eoi))
+           "foo"))
+    (is (= (tparse2 "foo   " (<g 0 (>skip+ "foo" identity) eoi))
            "foo"))
     (is (= (tparse2 "foo   " (<g 0 (>skip+ 0 "foo" identity) eoi))
            "foo"))

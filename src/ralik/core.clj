@@ -690,10 +690,17 @@ Return a list."
 
 (defmacro <g
   "Same as g but return the result of forms.
+
 If form in an integer return the result of the nth form in forms.
-If form is the vector [n,m], return the result of the nth (inclusive) to
-mth (exclusive) forms as a vector.
+0 <= i <= forms-count must hold.
+If form is the vector [start, end], return the result of the start (inclusive)
+to end (exclusive) forms as a vector. 0 <= start < end <= forms-count must
+hold.
 Else, return the result of all forms as a vector.
+
+If a single form is supplied, return the result of that form:
+  (<g \\x) is the same as (<g 0 \\x)
+
 NOTE: The index values must be literal integers. They are evaluated at compile
       time."
   [form & forms]
@@ -708,7 +715,7 @@ NOTE: The index values must be literal integers. They are evaluated at compile
             @~res)))
      (throw (Exception. (str "The first argument to <g must be >= 0"
                              ", got: " form))))
-   ;; [N, M]
+   ;; [start, end]
    ;; TODO: Convert a range difference of one into and nth selector.
    ;;       (<g [1 2] \x \y \z) => (<g 0 \x \y \z)
    (vector? form)
@@ -723,13 +730,9 @@ NOTE: The index values must be literal integers. They are evaluated at compile
      (throw (Exception. (str "The first argument to <g must be a vector of"
                              " two elements [N, M] where 0 <= N < M holds,"
                              " got: " form))))
-   
-   ;; TODO: One form given, dont put its result in a vector.
-   ;;       (<g "foo") would behave as (<g 0 "foo")
-   ;;       This is going to take a lot of testing.
-   ;; (empty? forms) `(<g 0 ~form)
-   
-   ;; return the result of all forms
+   ;; one form given, dont put its result in a vector.
+   (empty? forms) `(<g 0 ~form)
+   ;; return the result of all forms as a vector
    :else
    (let [res (gensym)
          [form2 & forms2] (collect-all-forms (cons form forms) res)]
