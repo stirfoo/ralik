@@ -27,3 +27,4 @@ All keys are given with default values except :start-rule."
    (<g 0 (Statement) eoi))
   (Statement
    (<g 0 "foo")))
+

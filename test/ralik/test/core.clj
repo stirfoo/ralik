@@ -721,7 +721,7 @@
            ["foo"]))
     (is (= (tparse2 "foo   " (<g 0 (<skip+ 0 "foo") eoi))
            "foo"))
-    (is (= (tparse2 "   foo   " (<g 0 (<skip+ [0 2] "foo") eoi))
+    (is (= (tparse2 "   foo   " (<g 0 (<skip+ [0 1] "foo") eoi))
            ["foo"]))))
 
 (deftest >skip+-test
@@ -730,7 +730,7 @@
            "foo"))
     (is (= (tparse2 "foo   " (<g 0 (>skip+ 0 "foo" identity) eoi))
            "foo"))
-    (is (= (tparse2 "   foo   " (<g 0 (>skip+ [0 2] "foo" vector) eoi))
+    (is (= (tparse2 "   foo   " (<g 0 (>skip+ [0 1] "foo" vector) eoi))
            ["foo"]))))
 
 (deftest nested-skip-+-test

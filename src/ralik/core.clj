@@ -473,7 +473,6 @@ Example to match \\x, or \\y, or a digit followed by \\i:
 ;; g&           positive look ahead              &e
 ;; g!           negative look ahead              !e
 ;; g+           one or more                      e e*
-;; ch           match any single character       .
 ;; g_           interspersed list of items       e1 (e2 e1)*
 ;; g-           match all but...                 !e1 e2
 ;; g||          a or b, or a followed by b       (e1 e2?) / e2
@@ -676,7 +675,7 @@ Return a list."
 forms is a list of forms given to <g, <g?, etc. result must be a (gensym).
 Return a list."
   [n m forms result]
-  (when (> m (inc (count forms)))
+  (when (> m (count forms))
     (throw (Exception.
             (str "not enough arguments passed to collector parser"))))
   (let [s (set (range n m))]
@@ -710,6 +709,8 @@ NOTE: The index values must be literal integers. They are evaluated at compile
      (throw (Exception. (str "The first argument to <g must be >= 0"
                              ", got: " form))))
    ;; [N, M]
+   ;; TODO: Convert a range difference of one into and nth selector.
+   ;;       (<g [1 2] \x \y \z) => (<g 0 \x \y \z)
    (vector? form)
    (if (and (= (count form) 2)
             (<= 0 (form 0))
@@ -719,9 +720,15 @@ NOTE: The index values must be literal integers. They are evaluated at compile
        `(let [~res (atom [])]
           (when (g ~form2 ~@forms2)
             @~res)))
-     (throw (Exception. (str "The first argument to >g must be a vector of"
+     (throw (Exception. (str "The first argument to <g must be a vector of"
                              " two elements [N, M] where 0 <= N < M holds,"
                              " got: " form))))
+   
+   ;; TODO: One form given, dont put its result in a vector.
+   ;;       (<g "foo") would behave as (<g 0 "foo")
+   ;;       This is going to take a lot of testing.
+   ;; (empty? forms) `(<g 0 ~form)
+   
    ;; return the result of all forms
    :else
    (let [res (gensym)
@@ -881,7 +888,14 @@ NOTE: i must be a literal integer"
               col# []
               old-pos# *cur-pos*]
          (if (< n# h#)
-           (if-let [res# (<g ~form ~@forms)]
+           (if-let [res# (<g ~form ~@forms)
+                    ;; TODO: Modify <g instead
+                    ;; ~(if (empty? forms)
+                    ;;         ;; (<rep 4 \x) will return [\x \x \x \x] instead
+                    ;;         ;; of [[\x] [\x] [\x] [\x]]
+                    ;;         `(<g 0 ~form)
+                    ;;         `(<g ~form ~@forms))
+                    ]
              (recur (inc n#)
                     (conj col# res#)
                     *cur-pos*)
@@ -1540,8 +1554,8 @@ Example:
 	      inherit? profile? ppfn]
        :as key-args
        :or {skipper 'wsp-skipper, start-rule 'start, match-case? false,
-	    memoize? false, trace? false, inherit? false, profile? false,
-            ppfn identity}}]
+	    print-err? false, memoize? false, trace? false, inherit? false,
+            profile? false,ppfn identity}}]
    rule & rules]
   ;; some error handling
   (chk-grammar-args name doc-string key-args rule rules start-rule)

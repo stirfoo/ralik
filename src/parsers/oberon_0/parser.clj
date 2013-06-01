@@ -50,8 +50,7 @@
   ;; ModuleHeader ModuleBody '.'
   (Module (g (ModuleHeader) (ModuleBody) "." eoi))
   ;; 'MODULE' Ident ';'
-  (ModuleHeader (g (kw "MODULE") (>g (Ident)
-                                     #(do (push-scope-name %)))
+  (ModuleHeader (g (kw "MODULE") (>g (Ident) push-scope-name %)
                     ";"))
   ;; Decls ('BEGIN' StatementSeq)? 'END' Ident
   (ModuleBody (g (Decls) (g? (kw "BEGIN") (StatementSeq))
