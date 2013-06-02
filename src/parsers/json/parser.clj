@@ -152,14 +152,14 @@ NOTE: If you want to read JSON about a zillion times faster, use
              ;; a ".
              (g! "\"")
              (<g|
-              ;; The `cut' operator ! prevents any backtracking.  Once the \\
-              ;; is read the parser is committed to this alternate. It will
-              ;; not try the _. In this case esc-char must match else the
+              ;; The !cut! operator prevents any backtracking.  Once the
+              ;; \\ is read the parser is committed to this alternate. It will
+              ;; not try the <_. In this case esc-char must match else the
               ;; parse will fail.
-              (<g 2 "\\" ! (esc-char))
+              (<g 2 "\\" !cut! (esc-char))
               ;; match any single character unless we're at the end of the
               ;; input
-              _)
+              <_)
              ;; Apply str to the vector of the characters accumulated by the
              ;; previous form.
              #(apply str %&)))
@@ -208,8 +208,8 @@ NOTE: If you want to read JSON about a zillion times faster, use
         (g "u" (HexChar))))
   (Jstring
    (<g 1 "\"" (skip- (>g* 1 (g! "\"")
-                          (<g| (<g 2 "\\" ! (EscChar))
-                               _)
+                          (<g| (<g 2 "\\" !cut! (EscChar))
+                               <_)
                           #(apply str %&)))
        "\""))
   (Jnumber
@@ -235,5 +235,5 @@ NOTE: If you want to read JSON about a zillion times faster, use
   (EscChar (g| #"[\"\\/]" #"[bfnrt]" #"u[0-9a-fA-F]{4,4}"))
   (Jstring (g "\"" (skip- (g* (g! "\"")
                               (g| (g "\\" (EscChar))
-                                  _)))
+                                  <_)))
               "\"")))

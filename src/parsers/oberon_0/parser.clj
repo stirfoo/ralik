@@ -33,10 +33,11 @@
   "Skip whitespace and (* style *) comments."
   [:start-rule Skip
    :trace? false
+   :skipper nil
    :memoize? false
    :inherit? true]
-  (Skip (skip- (g* (g| #"[ \n\r\t\v\f]+"
-                       (g "(*" (g* (g- _ "*)")) "*)"))))))
+  (Skip (g* (g| #"[ \n\r\t\v\f]+"
+                (g "(*" (g* (g- <_ "*)")) "*)")))))
 
 (defgrammar oberon-0
   "Oberon-0 parser"

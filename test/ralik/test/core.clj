@@ -55,24 +55,25 @@
 
 (deftest >g-test
   (testing ">g parser"
-    (is (= (tparse2 "0 1 2" (<g 0 (>g _ _ _ #(vec %&)) eoi))
+    (is (= (tparse2 "0 1 2" (<g 0 (>g <_ <_ <_ #(vec %&)) eoi))
            [\0 \1 \2]))
-    (is (= (tparse2 "0 1 2" (<g 0 (>g 0 _ _ _ #(vec %&)) eoi))
+    (is (= (tparse2 "0 1 2" (<g 0 (>g 0 <_ <_ <_ #(vec %&)) eoi))
            [\0]))
-    (is (= (tparse2 "0 1 2" (<g 0 (>g 1 _ _ _ #(vec %&)) eoi))
+    (is (= (tparse2 "0 1 2" (<g 0 (>g 1 <_ <_ <_ #(vec %&)) eoi))
            [\1]))
-    (is (= (tparse2 "0 1 2" (<g 0 (>g 2 _ _ _ #(vec %&)) eoi))
+    (is (= (tparse2 "0 1 2" (<g 0 (>g 2 <_ <_ <_ #(vec %&)) eoi))
            [\2]))
-    (is (= (tparse2 "0 1 2" (<g 0 (>g [0 1] _ _ _ #(vec %&)) eoi))
+    (is (= (tparse2 "0 1 2" (<g 0 (>g [0 1] <_ <_ <_ #(vec %&)) eoi))
            [\0]))
-    (is (= (tparse2 "0 1 2" (<g 0 (>g [1 2] _ _ _ #(vec %&)) eoi))
+    (is (= (tparse2 "0 1 2" (<g 0 (>g [1 2] <_ <_ <_ #(vec %&)) eoi))
            [\1]))
-    (is (= (tparse2 "0 1 2" (<g 0 (>g [2 3] _ _ _ #(vec %&)) eoi))
+    (is (= (tparse2 "0 1 2" (<g 0 (>g [2 3] <_ <_ <_ #(vec %&)) eoi))
            [\2]))
-    (is (= (tparse2 "0 1 2" (<g 0 (>g [0 2] _ _ _ #(vec %&)) eoi))
+    (is (= (tparse2 "0 1 2" (<g 0 (>g [0 2] <_ <_ <_ #(vec %&)) eoi))
            [\0 \1]))
-    (is (= (tparse2 "0 1 2" (<g 0 (>g [1 3] _ _ _ #(vec %&)) eoi))
-           [\1 \2]))))
+    (is (= (tparse2 "0 1 2" (<g 0 (>g [1 3] <_ <_ <_ #(vec %&)) eoi))
+           [\1 \2]))
+    ))
 
 ;; g*, <g*, >g*
 
@@ -110,25 +111,25 @@
 
 (deftest >g*-test
   (testing ">g* parser"
-    (is (= (tparse2 "" (<g 0 (>g* _ #(vec %&)) eoi))
+    (is (= (tparse2 "" (<g 0 (>g* <_ #(vec %&)) eoi))
            []))
-    (is (= (tparse2 "0 1 2" (<g 0 (>g* _ _ _ #(vec %&)) eoi))
+    (is (= (tparse2 "0 1 2" (<g 0 (>g* <_ <_ <_ #(vec %&)) eoi))
            [[\0 \1 \2]]))
-    (is (= (tparse2 "0 1 2" (<g 0 (>g* 0 _ _ _ #(vec %&)) eoi))
+    (is (= (tparse2 "0 1 2" (<g 0 (>g* 0 <_ <_ <_ #(vec %&)) eoi))
            [\0]))
-    (is (= (tparse2 "0 1 2" (<g 0 (>g* 1 _ _ _ #(vec %&)) eoi))
+    (is (= (tparse2 "0 1 2" (<g 0 (>g* 1 <_ <_ <_ #(vec %&)) eoi))
            [\1]))
-    (is (= (tparse2 "0 1 2" (<g 0 (>g* 2 _ _ _ #(vec %&)) eoi))
+    (is (= (tparse2 "0 1 2" (<g 0 (>g* 2 <_ <_ <_ #(vec %&)) eoi))
            [\2]))
-    (is (= (tparse2 "0 1 2" (<g 0 (>g* [0 1] _ _ _ #(vec %&)) eoi))
+    (is (= (tparse2 "0 1 2" (<g 0 (>g* [0 1] <_ <_ <_ #(vec %&)) eoi))
            [\0]))
-    (is (= (tparse2 "0 1 2" (<g 0 (>g* [1 2] _ _ _ #(vec %&)) eoi))
+    (is (= (tparse2 "0 1 2" (<g 0 (>g* [1 2] <_ <_ <_ #(vec %&)) eoi))
            [\1]))
-    (is (= (tparse2 "0 1 2" (<g 0 (>g* [2 3] _ _ _ #(vec %&)) eoi))
+    (is (= (tparse2 "0 1 2" (<g 0 (>g* [2 3] <_ <_ <_ #(vec %&)) eoi))
            [\2]))
-    (is (= (tparse2 "0 1 2" (<g 0 (>g* [0 2] _ _ _ #(vec %&)) eoi))
+    (is (= (tparse2 "0 1 2" (<g 0 (>g* [0 2] <_ <_ <_ #(vec %&)) eoi))
            [[\0 \1]]))
-    (is (= (tparse2 "0 1 2" (<g 0 (>g* [1 3] _ _ _ #(vec %&)) eoi))
+    (is (= (tparse2 "0 1 2" (<g 0 (>g* [1 3] <_ <_ <_ #(vec %&)) eoi))
            [[\1 \2]]))))
 
 ;; g|, <g|, >g|
@@ -211,33 +212,33 @@
 (deftest <g?-test
   (testing "<g? parser"
     (is (= (tparse2 "" (<g 0 (<g? \x) eoi))
-           :g?-failed))
+           :empty))
     (is (= (tparse2 "" (<g 0 (<g? 0 \x) eoi))
-           :g?-failed))
+           :empty))
     (is (= (tparse2 "" (<g 0 (<g? [0 1] \x) eoi))
-           :g?-failed))
+           :empty))
     (is (= (tparse2 "xyz" (<g 0 (<g? \x \y \z) eoi))
            [\x \y \z]))
     (is (= (tparse2 "xz" (<g 0 (<g \x (<g? \y) \z) eoi))
-           [\x :g?-failed \z]))))
+           [\x :empty \z]))))
 
 (deftest >g?-test
   (testing ">g? parser"
     (is (= (tparse2 "+345" (<g 0 (>g? #"[+-]" {"+" '+
                                              "-" '-
-                                             :g?-failed :g?-failed})
+                                             :empty :empty})
                              #"\d+" eoi))
            '+))
     (is (= (tparse2 "-345" (<g 0 (>g? #"[+-]" {"+" '+
                                              "-" '-
-                                             :g?-failed :g?-failed})
+                                             :empty :empty})
                              #"\d+" eoi))
            '-))
     (is (= (tparse2 "345" (<g 0 (>g? #"[+-]" {"+" '+
                                              "-" '-
-                                             :g?-failed :g?-failed})
+                                             :empty :empty})
                              #"\d+" eoi))
-           :g?-failed))))
+           :empty))))
 
 ;; g&
 ;; NOTE: g& is a predicate, so no <g&, or >g& parsers
@@ -259,20 +260,20 @@
   (testing "g- parser"
     (is (tparse2 "a" (g- #"[a-z]" \x)  eoi))
     (is (not (tparse2 "x" (g- #"[a-z]" \x) eoi)))
-    (is (tparse2 "sldfkeerw" (g+ (g- _ \q)) eoi) "any character except q")))
+    (is (tparse2 "sldfkeerw" (g+ (g- <_ \q)) eoi) "any character except q")))
 
 (deftest <g--test
   (testing "<g- parser"
-    (is (= (tparse2 "x" (<g 0 (<g- _ (g| \a \b \c)) eoi))
+    (is (= (tparse2 "x" (<g 0 (<g- <_ (g| \a \b \c)) eoi))
            \x))
-    (is (= (tparse2 "a" (<g 0 (<g- _ (g| \a \b \c)) eoi))
+    (is (= (tparse2 "a" (<g 0 (<g- <_ (g| \a \b \c)) eoi))
            nil))))
 
 (deftest >g--test
   (testing ">g- parser"
-    (is (= (tparse2 "x" (<g 0 (>g- _ (g| \a \b \c) identity) eoi))
+    (is (= (tparse2 "x" (<g 0 (>g- <_ (g| \a \b \c) identity) eoi))
            \x))
-    (is (= (tparse2 "a" (<g 0 (>g- _ (g| \a \b \c) identity) eoi))
+    (is (= (tparse2 "a" (<g 0 (>g- <_ (g| \a \b \c) identity) eoi))
            nil))))
 
 ;; g_, <g_, >g_
@@ -322,17 +323,17 @@
     (is (= (tparse2 "123.456" (<g 0 (<g|| #"\d+" #"\.\d+") eoi))
            ["123" ".456"]))
     (is (= (tparse2 "123" (<g 0 (<g|| #"\d+" #"\.\d+") eoi))
-           ["123" :g?-failed]))
+           ["123" :empty]))
     (is (= (tparse2 ".456" (<g 0 (<g|| #"\d+" #"\.\d+") eoi))
-           [:g?-failed ".456"]))
+           [:empty ".456"]))
     (is (= (tparse2 "123" (<g 0 (<g|| 0 #"\d+" #"\.\d+") eoi))
            "123"))
     (is (= (tparse2 ".456" (<g 0 (<g|| 0 #"\d+" #"\.\d+") eoi))
-           :g?-failed))
+           :empty))
     (is (= (tparse2 ".456" (<g 0 (<g|| 1 #"\d+" #"\.\d+") eoi))
            ".456"))
     (is (= (tparse2 "123" (<g 0 (<g|| 1 #"\d+" #"\.\d+") eoi))
-           :g?-failed))))
+           :empty))))
 
 (deftest >g||-test
   (testing ">g|| parser"
@@ -340,17 +341,17 @@
                                   eoi))
            ["123" ".456"]))
     (is (= (tparse2 "123" (<g 0 (>g|| #"\d+" #"\.\d+" #(vector %1 %2)) eoi))
-           ["123" :g?-failed]))
+           ["123" :empty]))
     (is (= (tparse2 ".456" (<g 0 (>g|| #"\d+" #"\.\d+" #(vector %1 %2)) eoi))
-           [:g?-failed ".456"]))
+           [:empty ".456"]))
     (is (= (tparse2 "123" (<g 0 (>g|| 0 #"\d+" #"\.\d+" identity) eoi))
            "123"))
     (is (= (tparse2 ".456" (<g 0 (>g|| 0 #"\d+" #"\.\d+" identity) eoi))
-           :g?-failed))
+           :empty))
     (is (= (tparse2 ".456" (<g 0 (>g|| 1 #"\d+" #"\.\d+" identity) eoi))
            ".456"))
     (is (= (tparse2 "123" (<g 0 (>g|| 1 #"\d+" #"\.\d+" identity) eoi))
-           :g?-failed))))
+           :empty))))
 
 ;; rep, >rep, <rep
 
@@ -492,24 +493,24 @@
 
 (deftest <lex-test
   (testing "Return-the-matched-text operator: <lex"
-    (is (= (tparse2 "/* foo */" (<lex "/*" (g+ (g- _ "*/")) "*/"))
+    (is (= (tparse2 "/* foo */" (<lex "/*" (g+ (g- <_ "*/")) "*/"))
            "/* foo */"))
-    (is (= (tparse2 "/* foo */" (<lex 0 "/*" (g+ (g- _ "*/")) "*/"))
+    (is (= (tparse2 "/* foo */" (<lex 0 "/*" (g+ (g- <_ "*/")) "*/"))
            "/*"))
-    (is (= (tparse2 "/* foo */" (<lex 1 "/*" (g+ (g- _ "*/")) "*/"))
+    (is (= (tparse2 "/* foo */" (<lex 1 "/*" (g+ (g- <_ "*/")) "*/"))
            " foo "))
-    (is (= (tparse2 "/* foo */" (<lex 2 "/*" (g+ (g- _ "*/")) "*/"))
+    (is (= (tparse2 "/* foo */" (<lex 2 "/*" (g+ (g- <_ "*/")) "*/"))
            "*/"))
-    (is (= (tparse2 "/* foo */" (<lex [0 1] "/*" (g+ (g- _ "*/")) "*/"))
+    (is (= (tparse2 "/* foo */" (<lex [0 1] "/*" (g+ (g- <_ "*/")) "*/"))
            "/*"))
-    (is (= (tparse2 "/* foo */" (<lex [1 2] "/*" (g+ (g- _ "*/")) "*/"))
+    (is (= (tparse2 "/* foo */" (<lex [1 2] "/*" (g+ (g- <_ "*/")) "*/"))
            " foo "))
-    (is (= (tparse2 "/* foo */" (<lex [2 3] "/*" (g+ (g- _ "*/")) "*/"))
+    (is (= (tparse2 "/* foo */" (<lex [2 3] "/*" (g+ (g- <_ "*/")) "*/"))
            "*/"))
-    (is (= (tparse2 "/* foo */" (<lex [0 2] "/*" (g+ (g- _ "*/")) "*/"))
+    (is (= (tparse2 "/* foo */" (<lex [0 2] "/*" (g+ (g- <_ "*/")) "*/"))
            "/* foo "))
     (is (= (tparse2
-            "/* foo */" (<lex [1 3] "/*" (g+ (g- _ "*/")) "*/"))
+            "/* foo */" (<lex [1 3] "/*" (g+ (g- <_ "*/")) "*/"))
            " foo */"))))
 
 (deftest >lex-test
@@ -525,7 +526,9 @@
 
 ;; kw, <kw, >kw
 
-(defatomic :kw-term (match #"[a-zA-Z][a-zA-Z0-9_]*"))
+(defatomic kw-terminator
+  "Redefining the default core value for kw-terminator"
+  (match #"[a-zA-Z][a-zA-Z0-9_]*"))
 
 (deftest kw-test
   (testing "kw parser"

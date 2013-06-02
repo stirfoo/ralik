@@ -52,7 +52,7 @@ empty string as a match."
                         p)))))
   (Prefix (>g (<g? (<g| (AND) (NOT))) (Suffix)
               #(let [[op p] %&]
-                 (if (= op :g?-failed)
+                 (if (= op :empty)
                    p
                    (if (and (seq? p)    ; unnest g parsers
                             (= (first p) 'g))
@@ -60,7 +60,7 @@ empty string as a match."
                      (list (symbol (str "g" op)) p))))))
   (Suffix (>g (Primary) (<g? (<g| (QUESTION) (STAR) (PLUS)))
               #(let [[p op] %&]
-                 (if (= op :g?-failed)
+                 (if (= op :empty)
                    p
                    (if (and (seq? p)    ; unnest g parsers
                             (= (first p) 'g))
@@ -103,7 +103,7 @@ empty string as a match."
                                                (Integer/parseInt % 8)))
         (>g 1 "\\" #"[0-7][0-7]?" #(format "\\u%04x"
                                            (Integer/parseInt % 8)))
-        (>g 1 (g! "\\") _ #(if (= % \")
+        (>g 1 (g! "\\") <_ #(if (= % \")
                              ;;  for ["] 
                              "\\\""
                              (str %)))))
@@ -117,13 +117,13 @@ empty string as a match."
   (PLUS (<g 0 "+" (Spacing)))
   (OPEN (g "(" (Spacing)))
   (CLOSE (g ")" (Spacing)))
-  (DOT (>g "." (Spacing) (constantly '_)))
+  (DOT (>g "." (Spacing) (constantly '<_)))
 
   (Spacing (g* (g| (Space) (Comment))))
-  (Comment (g "#" (g* (g! (EndOfLine)) _)))
+  (Comment (g "#" (g* (g! (EndOfLine)) <_)))
   (Space (g| " " "\t" (EndOfLine)))
   (EndOfLine (g| "\r\n" "\n" "\r"))
-  (EndOfFile (g! _)))
+  (EndOfFile (g! <_)))
 
 (defn peg->ralik
   "Read and parse in-file, a PEG, then write a ralik grammar to out-file.

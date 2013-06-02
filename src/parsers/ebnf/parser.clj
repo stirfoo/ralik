@@ -12,9 +12,11 @@ http://en.wikipedia.org/wiki/Extended_Backus%E2%80%93Naur_Form"}
 
 (defgrammar ebnf-skipper
   "Skip whitespace and possibly nested (* comments *)"
-  [:start-rule Skip :inherit? true]
-  (Skip (skip- (g* (g| #"[ \n\r\t\f\v]" (Comment)))))
-  (Comment (g "(*" (g* (g| (Comment) (g- _ "*)"))) "*)")))
+  [:start-rule Skip
+   :skipper nil
+   :inherit? true]
+  (Skip (g* (g| #"[ \n\r\t\f\v]" (Comment))))
+  (Comment (g "(*" (g* (g| (Comment) (g- <_ "*)"))) "*)")))
 
 (defgrammar ebnf
   "Parse Extended BNF.
@@ -39,13 +41,13 @@ Return a vector of ralik rules."
   ;; TODO: handle {'A'}-, which should translate to: (g+ "A")
   (Term (>g (Factor) (<g? 1 "-" (Exception))
             #(let [[f e] %&]
-               (if (= e :g?-failed)
+               (if (= e :empty)
                  f
                  (list 'g- f e)))))
   (Exception (Factor))
   (Factor (>g (<g? 0 uint10 "*") (Primary)
               #(let [[n p] %&]
-                 (if (= n :g?-failed)
+                 (if (= n :empty)
                    p
                    ;; convert 3 * ['x'] to: (rep {:h 3} "x")
                    ;;           instead of: (rep 3 (? "x"))
@@ -61,9 +63,9 @@ Return a vector of ralik rules."
   (OptionalSeq (>g 1 "[" (DefList) "]" #(list* 'g? %&)))
   (RepetedSeq (>g 1 "{" (DefList) "}" #(list* 'g* %&)))
   (GroupedSeq (<g 1 "(" (DefList) ")"))
-  (TerminalStr (g| (<g 1 "'" (<skip- 0 (<lex (g+ (g- _ "'")))) "'")
-                   (<g 1 "\"" (<skip- 0 (<lex (g+ (g- _ "\"")))) "\"")))
+  (TerminalStr (g| (<g 1 "'" (<skip- 0 (<lex (g+ (g- <_ "'")))) "'")
+                   (<g 1 "\"" (<skip- 0 (<lex (g+ (g- <_ "\"")))) "\"")))
   (MetaIdent (>lex #"[a-zA-Z][a-zA-Z0-9]*( ?[a-zA-Z0-9]+)*"
                    #(symbol (.replace % " " "-"))))
-  (SpecialSeq (>g 1 "?" (<lex (skip- (g* (g- _ "?")))) "?"
+  (SpecialSeq (>g 1 "?" (<lex (skip- (g* (g- <_ "?")))) "?"
                   #(list 'special (.trim %)))))

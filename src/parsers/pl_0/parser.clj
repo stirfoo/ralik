@@ -12,7 +12,7 @@ http://en.wikipedia.org/wiki/PL/0"}
 (def opmap {"=" '=, "#" 'not=, "<=" '<=, "<" '<, ">=" '>=, ">" '>, "+" '+,
             "-" '-, "*" '*, "/" 'quot, "!" 'println,
             "?" '(Integer/parseInt (read-line)),"odd" 'odd?, "if" 'when,
-            "while" 'while, "" :empty, :g?-failed :empty})
+            "while" 'while, "" :empty})
 
 (defn getop
   [x]
@@ -51,7 +51,9 @@ Called each time a var or constant is referenced."
    :else (throw (Exception. (str "PL/0 undefined var or constant `"
                                  name "'")))))
 
-(defatomic :kw-term (match #"[a-zA-Z0-9]"))
+(defatomic kw-terminator
+  "Define characters that cannot immediately follow a PL/0 keyword"
+  (match #"[a-zA-Z0-9]"))
 
 (defgrammar pl-0-skipper
   "Skip whitespace and (* style *) comments."
@@ -59,7 +61,7 @@ Called each time a var or constant is referenced."
    :skipper nil
    :inherit? true]
   (Skip (g* (g| wsp+
-                (g "(*" (g* (g- _ "*)")) "*)")))))
+                (g "(*" (g* (g- <_ "*)")) "*)")))))
 
 (defgrammar pl-0
   "Parse and evaluate Wirth's PL/0."

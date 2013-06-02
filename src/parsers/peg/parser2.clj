@@ -93,7 +93,7 @@ terminals are not separate rules. It parses in about half the time."}
                                                (Integer/parseInt % 8)))
         (>g 1 "\\" #"[0-7][0-7]?" #(format "\\u%04x"
                                            (Integer/parseInt % 8)))
-        (>g 1 (g! "\\") _ #(if (= % \")
+        (>g 1 (g! "\\") <_ #(if (= % \")
                              ;;  for ["] 
                              "\\\""
                              (str %))))))

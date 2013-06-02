@@ -81,7 +81,7 @@ Example:
   ;; ** is right-associative 2**3**4 => 2**(3**4)
   (PowExpr
    (>g (Primary) (<g? "**" (PowExpr))
-       #(if (= %2 :g?-failed)
+       #(if (= %2 :empty)
           %1
           (list 'Math/pow %1 (second %2)))))
   ;;
