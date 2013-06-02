@@ -2,7 +2,7 @@
 ;; 1. Parse error report doesn't handle lines longer than the term width.
 ;;    Need to window the line of text.
 
-(ns ^{:doc "A Parsing Expression Grammar parser"}
+(ns ^{:doc "A Parsing Expression Grammar based parser"}
   ralik.core
   (:use [clojure.set])
   (:import [ralik RalikException CutException ParserException]))

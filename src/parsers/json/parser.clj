@@ -217,23 +217,3 @@ NOTE: If you want to read JSON about a zillion times faster, use
          #(if (some #{\. \e \E} %)
             (Double/parseDouble %)
             (Long/parseLong %)))))
-
-;; TODO: not correct
-(defgrammar json-chk
-  "Syntax check only"
-  [:start-rule Start :match-case? true :print-err? true]
-  (Start (g (g| (Jobject) (Jarray)) eoi))
-  (Jobject (g "{" (g| (g "}")
-                      (g (g_ (g (Jstring) ":" (Jvalue))
-                             ",")
-                         "}"))))
-  (Jarray (g "[" (g| (g "]") (g (<g_ (Jvalue) ",") "]"))))
-  (Jvalue (g| (Jstring)
-              (Jobject)
-              (Jarray)
-              #"-?(0|([1-9][0-9]*))(\.[0-9]+)?([Ee][+-]?[0-9]+)?"))
-  (EscChar (g| #"[\"\\/]" #"[bfnrt]" #"u[0-9a-fA-F]{4,4}"))
-  (Jstring (g "\"" (skip- (g* (g! "\"")
-                              (g| (g "\\" (EscChar))
-                                  <_)))
-              "\"")))
