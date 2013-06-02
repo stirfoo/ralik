@@ -91,12 +91,13 @@ Return the text/character matched on success else return nil or false"
 
 (defmethod match [java.lang.Character] [c]
   (skip)
-  (when (< *cur-pos* *end-pos*)
+  (if (< *cur-pos* *end-pos*)
     (let [result (.charAt *text-to-parse* *cur-pos*)]
       (or (and (*char=* result c)
                (set! *cur-pos* (inc *cur-pos*))
                result)
-          (adv-err-pos (str "expected character `" c "'"))))))
+          (adv-err-pos (str "expected character `" c "'"))))
+    (adv-err-pos (str "expected character `" c "' at end of input"))))
 
 (defmethod match [java.lang.String] [s]
   (skip)
@@ -292,7 +293,7 @@ forms, but does not advance *cur-pos*."
 (defmacro g-
   "Return a non-nil value if false-form does not match and true-form does.
 Example:
- (parse \"aboerivneiscde\" (g+ (g- <_ \\q))) ; match any character except a q"
+ (tparse \"aboerivneiscde\" (g+ (g- <_ \\q))) ; match any character except a q"
   [true-form false-form]
   `(g (g! ~false-form) ~true-form))
 
@@ -314,7 +315,7 @@ Examples:
   "Return a non-nil value if one or more of the parsers in forms matches, in
 any order.
   Example:
-  (tparse \"010100001\" (lex (prm \\0 \\1))) => \"010100001\""
+  (tparse \"010100001\" (<lex (prm \\0 \\1))) => \"010100001\""
   [form & forms]
   `(g+ (g| ~form ~@forms)))
 
