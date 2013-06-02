@@ -44,10 +44,10 @@ the operator failed. Initially unbound."}
   *err-msg*)
 (def ^{:dynamic true
        :doc "For Pseudo-cut operations. This gets bound to false upon entry
-into an alternative (g| <g| >g|) parser. A subsequent !cut! within one of these
-parsers will set this var to true. The alternate parser will not try any more
-alternatives. Additionally, *cur-pos* will not be reset to the beginning of
-the form containing the !cut!. Initially unbound."}
+into an alternative (g| <g| >g|) parser. A subsequent !cut! within one of
+these parsers will set this var to true. The ordered choice parser will not
+try any more alternatives. Additionally, *cur-pos* will not be reset to the
+beginning of the form containing the !cut!. Initially unbound."}
   *cut*)
 
 ;; -----------
@@ -109,12 +109,8 @@ Return the text/character matched on success else return nil or false"
         (let [c (first ttpseq)]
           (if (*char=* (first sseq) c)
             (recur (next sseq) (next ttpseq) (inc pos) (str result c))
-            (adv-err-pos (str "expected character `" (first sseq) "'")
-                               pos)))
-        
-        (adv-err-pos (str "expected character `" (first sseq)
-                                "' at end of input")
-                           pos))
+            (adv-err-pos (str "expected `" s "'"))))
+        (adv-err-pos (str "expected `" s "' at end of input") *end-pos*))
       (do (set! *cur-pos* pos)
           result))))
 
@@ -987,7 +983,7 @@ A skip is performed first. Return the character."
 (defatomic kw-terminator
   "Define the kw and kws parser's terminator condition.
 This should define characters that cannot immediately follow the last
-character of the keyword() given to kw or kws.
+character of the keyword(s) given to kw or kws.
 
 The default is: (match #\"[a-zA-Z0-9_]\")"
   (match #"[a-zA-Z0-9_]"))
@@ -1039,13 +1035,13 @@ No space allowed in the token. Return an integer."
       (adv-err-pos "expected optionally signed decimal integer")))
 
 (defatomic uint16
-  "Match an unsigned hexidecimal number with optional 0[xX] prefix.
+  "Match an unsigned hexadecimal number with optional 0[xX] prefix.
 Return an integer."
   (or (>g #"(0[xX])?[0-9a-fA-F]+"
-          #(if (some #{\x} %)
+          #(if (some #{\x \X} %)
              (Integer/parseInt (subs % 2) 16)
              (Integer/parseInt % 16)))
-      (adv-err-pos "expected hexidecimal number")))
+      (adv-err-pos "expected hexadecimal number")))
 
 (defatomic c-ident
   "Match and return a C/C++ identifier as a string"
@@ -1054,7 +1050,6 @@ Return an integer."
 (defatomic c-comment
   "Match a C comment, return success or failure"
   (g "/*" (g* (g! "*/") <_) "*/"))
-
 
 ;; =======================================================================
 ;; 
