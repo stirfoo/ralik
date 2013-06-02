@@ -117,12 +117,13 @@ Return the text/character matched on success else return nil or false"
 
 (defmethod match [java.util.regex.Pattern] [pat]
   (skip)
-  (if (<= *cur-pos* *end-pos*)
+  (if (< *cur-pos* *end-pos*)
     (let [m (re-matcher pat (subs *text-to-parse* *cur-pos*))]
       (if (.lookingAt m)
         (do (set! *cur-pos* (+ *cur-pos* (.end m)))
             (.group m))
-        (adv-err-pos (str "expected regepx match `" pat "'"))))))
+        (adv-err-pos (str "expected regepx match `" pat "'"))))
+    (adv-err-pos (str "expected regexp match `" pat "' at end of input"))))
 
 ;; ----------------
 ;; Form Translation
