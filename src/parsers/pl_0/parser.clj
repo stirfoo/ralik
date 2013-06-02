@@ -56,9 +56,10 @@ Called each time a var or constant is referenced."
 (defgrammar pl-0-skipper
   "Skip whitespace and (* style *) comments."
   [:start-rule Skip
+   :skipper nil
    :inherit? true]
-  (Skip (skip- (g* (g| wsp
-                       (g "(*" (g* (g- _ "*)")) "*)"))))))
+  (Skip (g* (g| wsp+
+                (g "(*" (g* (g- _ "*)")) "*)")))))
 
 (defgrammar pl-0
   "Parse and evaluate Wirth's PL/0."

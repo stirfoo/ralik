@@ -200,7 +200,8 @@ body. Some built-in atomic parsers are eoi, _, eol, wsp, and blank."
 
 (defatomic eoi
   (skip)
-  (= *cur-pos* *end-pos*))
+  (or (= *cur-pos* *end-pos*)
+      (adv-err-pos "expected end of input")))
 
 ;; match and return any character as long as not at the end of input
 (defatomic _
@@ -210,38 +211,34 @@ body. Some built-in atomic parsers are eoi, _, eol, wsp, and blank."
            (.charAt *text-to-parse* (dec *cur-pos*)))
       (adv-err-pos "unexpected end of input")))
 
+;; match a SINGLE whitespace character
 (defatomic wsp
-  (skip)
-  (or (and (< *cur-pos* *end-pos*)
-           (let [c (nth *text-to-parse* *cur-pos*)]
-             (some #{c} [\space \tab \newline \return]))
-           (set! *cur-pos* (inc *cur-pos*)))
-      (adv-err-pos "expected space, tab, newline, or cursor return")))
+  (or (match #"[ \n\t\r\f\v]")
+      (adv-err-pos "expected whitespace character")))
+;; match ONE OR MORE whitespace characters
+(defatomic wsp+
+  (or (match #"[ \n\t\r\f\v]+")
+      (adv-err-pos "expected whitespace character")))
 
+;; match a SINGLE space or tab
 (defatomic blank
-  (skip)
-  (or (and (< *cur-pos* *end-pos*)
-           (let [c (nth *text-to-parse* *cur-pos*)]
-             (some #{c} [\space \tab]))
-           (set! *cur-pos* (inc *cur-pos*)))
+  (or (match #"[ \t]")
+      (adv-err-pos "expected space or tab")))
+;; match ONE OR MORE spaces or tabs
+(defatomic blank+
+  (or (match #"[ \t]+")
       (adv-err-pos "expected space or tab")))
 
+;; match a SINGLE end of line terminator \r\n, \r, or \n
+;; or the end of input
 (defatomic eol
-  (skip)
-  (or (and (< *cur-pos* *end-pos*)
-           (or (and (= (nth *text-to-parse* *cur-pos*) ; dos
-                       \return)
-                    (and (< (inc *cur-pos*) *end-pos*)
-                         (= (nth *text-to-parse* (inc *cur-pos*))
-                            \newline))
-                    (set! *cur-pos* (+ *cur-pos* 2)))
-               (and (= (nth *text-to-parse* *cur-pos*) ; unix
-                       \newline)
-                    (set! *cur-pos* (inc *cur-pos*)))
-               (and (= (nth *text-to-parse* *cur-pos*) ; mac
-                       \return)
-                    (set! *cur-pos* (inc *cur-pos*)))))
-      (adv-err-pos "expected end of line")))
+  (or (g| eoi #"\r?\n|\r")
+      (adv-err-pos "expected end of line terminator")))
+;; match a ONE OR MORE end of line terminators \r\n, \r or \n,
+;; or the end or input 
+(defatomic eol+
+  (or (g| eoi #"(\r?\n|\r)+")
+      (adv-err-pos "expected end of line terminator")))
 
 (defatomic !
   (when-not (bound? #'*cut*)
@@ -251,36 +248,48 @@ body. Some built-in atomic parsers are eoi, _, eol, wsp, and blank."
   :!-result)
 
 ;; Some Atomic Number parsers
-(defatomic ^{:doc "Match an unsigned decimal integer.
-Return an integer."}
-  uint10
-  (>lex #"\d+" Integer/parseInt))
 
-(defatomic ^{:doc "Match a decimal integer with OPTIONAL leading +/-.
-No space allowed in the token. Return an integer"}
-  sint10
-  (>lex #"[+-]?\d+"
-        (fn [x]
-          (println "+-int10" (first x))
-          (if (= (first x) \+)
-            (Integer/parseInt (subs x 1))
-            (Integer/parseInt x)))))
+;; Match an unsigned decimal integer. Return an integer.
+(defatomic uint10
+  (or (>lex #"\d+" Integer/parseInt)
+      (adv-err-pos "expected unsigned decimal integer")))
 
-(defatomic ^{:doc "Match an unsigned hexidecimal number with optional 0[xX]
-prefix. Return an integer."}
-  uint16
-  (>lex #"(O[xX])?[0-9a-fA-F]+"
-        (fn [x]
-          (if (some #{\x} x)
-            (Integer/parseInt (subs x 2) 16)
-            (Integer/parseInt x 16)))))
+;; Match a decimal integer with OPTIONAL leading +/-.
+;; No space allowed in the token. Return an integer.
+(defatomic sint10
+  (or (>g #"[+-]?\d+"
+          #(if (= (first %) \+)
+             (Integer/parseInt (subs % 1))
+             (Integer/parseInt %)))
+      (adv-err-pos "expected optionally signed decimal integer")))
 
-(defatomic ^{:doc "Match an unsigned octal number. One or more octal digits,
-no prefix. Return an integer."}
-  uint8
-  (>lex #"[0-7]+"
-        (fn [x]
-          (Integer/parseInt x 8))))
+;; Match an unsigned hexidecimal number with optional 0[xX] prefix.
+;; Return an integer.
+(defatomic uint16
+  (or (>g #"(0[xX])?[0-9a-fA-F]+"
+        #(if (some #{\x} %)
+            (Integer/parseInt (subs % 2) 16)
+            (Integer/parseInt % 16)))
+      (adv-err-pos "expected hexidecimal number")))
+
+;; Match an unsigned octal number. One or more octal digits,no prefix.
+;; Return an integer.
+(defatomic uint8
+  (>lex #"[0-7]+" #(Integer/parseInt % 8)))
+
+
+;; 
+;; Miscellaneous Atomic Parsers
+;; 
+
+;; match and return a C/C++ identifier as a string
+(defatomic c-ident
+  (<g #"[a-zA-Z_][a-zA-Z0-9_]*"))
+
+;; match a C comment, return success or failure
+(defatomic c-comment
+  (g "/*" (g* (g! "*/") _) "*/"))
+
 
 ;; ------------------
 ;; Low-Level Matchers
