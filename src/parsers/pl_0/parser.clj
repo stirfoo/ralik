@@ -139,7 +139,8 @@ http://en.wikipedia.org/wiki/PL/0"}
 
 (def opmap {"=" '=, "#" 'not=, "<=" '<=, "<" '<, ">=" '>=, ">" '>, "+" '+,
             "-" '-, "*" '*, "/" 'quot, "!" 'println,
-            "?" '(Integer/parseInt (read-line)), "odd" 'odd?,"" :empty})
+            "odd" 'odd?,"" :empty,
+            "?" '(pl0-read-int)})
 
 (defn getop
   [x]
@@ -172,18 +173,29 @@ http://en.wikipedia.org/wiki/PL/0"}
    :trace? false
    :print-err? true
    :ppfn #(do
-            #_(pprint @the-scope)
             #_(pprint %)
             (eval %))]
   (Program
    (init-scope)
    (<g 0 (>g (Block) #(concat % [true])) "." eoi))
-  (Block (>g (>g? (ConstExpr) getop)
-             (>g? (VarExpr) getop)
-             (>g* 0 (ProcExpr)
-                  #(if (empty? %&)
-                     :empty
-                     (list 'letfn `[~@%&])))
+  (Block (>g (<g? (ConstExpr))
+             (<g? (VarExpr))
+             (>g* (ProcExpr)
+                  #(list 'letfn
+                         `[~@(cons
+                              ;; built-in for ?x
+                              '(pl0-read-int
+                                []
+                                (loop [x (read-line)]
+                                  (if (re-find #"^[+-]?\d+$" x)
+                                    (if (= (first x) \+)
+                                      (Integer/parseInt (subs x 1))
+                                      (Integer/parseInt x))
+                                    (do
+                                      (println x "is not an integer,"
+                                               " try again")
+                                      (recur (read-line))))))
+                              %&)]))
              (Statement)
              #(let [x (reverse %&)]
                 (reduce (fn [x y]
