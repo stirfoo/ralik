@@ -1,5 +1,6 @@
 (ns ralik.test.core
-  (:use [ralik.core])
+  (:use ralik.core)
+  (:use [ralik.atomics :only [eoi uint10]])
   (:import [ralik RalikException])
   (:use [clojure.test]))
 
@@ -30,6 +31,7 @@
 
 (deftest <g-test
   (testing "<g parser"
+    ;; nth selector
     (is (= (tparse2 "xyz" (<g 0 \x \y \z))
            \x))
     (is (= (tparse2 "xyz" (<g 0 (<g \x \y \z) eoi))
@@ -40,6 +42,7 @@
            \y))
     (is (= (tparse2 "xyz" (<g 0 (<g 2 \x \y \z) eoi))
            \z))
+    ;; vector selector
     (is (= (tparse2 "xyz" (<g 0 (<g [0 1] \x \y \z) eoi))
            \x))
     (is (= (tparse2 "xyz" (<g 0 (<g [1 2] \x \y \z) eoi))
@@ -51,7 +54,21 @@
     (is (= (tparse2 "xyz" (<g 0 (<g [1 3] \x \y \z) eoi))
            [\y \z]))
     (is (= (tparse2 "xyz" (<g 0 (<g [0 3] \x \y \z) eoi))
-           [\x \y \z]))))
+           [\x \y \z]))
+    ;; set selector
+    (is (= (tparse2 "xyz" (<g 0 (<g #{} \x \y \z) eoi))
+           [\x \y \z]))
+    (is (= (tparse2 "xyz" (<g 0 (<g #{0} \x \y \z) eoi))
+           \x))
+    (is (= (tparse2 "xyz" (<g 0 (<g #{1} \x \y \z) eoi))
+           \y))
+    (is (= (tparse2 "xyz" (<g 0 (<g #{2} \x \y \z) eoi))
+           \z))
+    (is (= (tparse2 "xyz" (<g 0 (<g #{0 2} \x \y \z) eoi))
+           [\x \z]))
+    (is (= (tparse2 "0123456789"
+                    (<g 0 (<g #{0 9} <_ <_ <_ <_ <_ <_ <_ <_ <_ <_) eoi))
+           [\0 \9]))))
 
 (deftest >g-test
   (testing ">g parser"

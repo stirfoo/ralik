@@ -6,6 +6,7 @@
 http://en.wikipedia.org/wiki/PL/0"}
   parsers.pl-0.parser
   (:use ralik.core)
+  (:use [ralik.atomics :only [eoi uint10 wsp+]])
   (:use [clojure.pprint :only [pprint]])
   (:import [ralik RalikException]))
 

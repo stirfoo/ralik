@@ -14,6 +14,7 @@ Example usage
   [1 2 3]"}
   parsers.json.parser
   (:use ralik.core)
+  (:use [ralik.atomics :only [eoi]])
   (:use [clojure.walk :only [postwalk-replace]])
   (:import [ralik RalikException]))
 
@@ -183,7 +184,7 @@ NOTE: If you want to read JSON about a zillion times faster, use
   (Start
    (<g 0 (<g| (Jobject) (Jarray)) eoi))
   (Jobject
-   (g "{" (<g| (g "}" {})
+   (g "{" (<g| (<g 1 "}" {})
                (>g 0 (<g_ 0 (>g (Jstring) ":" (Jvalue)
                                 #(let [k (.trim %1)
                                        v %3]
@@ -195,9 +196,13 @@ NOTE: If you want to read JSON about a zillion times faster, use
                    "}"
                    #(into {} %&)))))
   (Jarray
-   (g "[" (g| (g "]" []) (<g 0 (<g_ 0 (Jvalue) ",") "]"))))
+   (<g 1 "[" (<g| (<g 1 "]" [])
+                  (<g 0 (<g_ 0 (Jvalue) ",") "]"))))
   (Jvalue
-   (<g| (Jstring) (Jnumber) (Jobject) (Jarray)
+   (<g| (Jstring)
+        (Jnumber)
+        (Jobject)
+        (Jarray)
         (>kws :true :false :null keyword)))
   (HexChar
    (>lex #"[0-9a-fA-F]{4,4}" #(char (Integer/parseInt % 16))))
@@ -205,12 +210,12 @@ NOTE: If you want to read JSON about a zillion times faster, use
    (<g| (>g #"[\"\\/]" first)
         (>g #"[bfnrt]" {"b" \backspace "f" \formfeed "n" \newline
                         "r" \return "t" \tab})
-        (g "u" (HexChar))))
+        (<g 1 "u" (HexChar))))
   (Jstring
-   (<g 1 "\"" (skip- (>g* 1 (g! "\"")
-                          (<g| (<g 2 "\\" !cut! (EscChar))
-                               <_)
-                          #(apply str %&)))
+   (<g 1 "\"" (<skip- (>g* 1 (g! "\"")
+                           (<g| (<g 2 "\\" !cut! (EscChar))
+                                <_)
+                           #(apply str %&)))
        "\""))
   (Jnumber
    (>lex #"-?(0|([1-9][0-9]*))(\.[0-9]+)?([Ee][+-]?[0-9]+)?"

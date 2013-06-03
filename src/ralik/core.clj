@@ -146,6 +146,11 @@ must be in this set"}
            (list? %) (if (= (first %) 'match)
                        %
                        (translate-form % (translating-parser? (first %))))
+           ;; TODO: This is `off'. I have a match method, but I'm checking the
+           ;;       type before returning a match. Also, it seems that (match
+           ;;       "x") is faster than (match \x) so converting "x" to \x
+           ;;       seems pointless. Maybe just get rid of the method and use
+           ;;       match-string, and match-regexp.
            (string? %) (cond (= % "") (list 'match "")
                              (> (count %) 1) (list 'match %)
                              :else (list 'match (first %)))
@@ -464,6 +469,18 @@ Return a list."
          forms
          (iterate inc 0))))
 
+(defn- collect-form-set
+  "Retrun the results of forms given their indexes as a set of integer
+s is the set of literal integer indexes, forms is a list of forms, result must
+be a (gensym). Return a list."
+  [s forms result]
+  (map (fn [x i] (if (s i)
+                   `(when-let [res# ~@(translate-form (list x) true)]
+                      (swap! ~result conj res#))
+                   x))
+       forms
+       (iterate inc 0)))
+
 ;; Parsers
 
 (defmacro <g
@@ -479,6 +496,10 @@ If a range of one is specified, [1 2] for example, the range is an implied nth
 selector:
   (<g [1 2] \\x \\y \\z) is the same as (<g 1 \\x \\y \\z)
 will return \\y, not [\\y].
+
+If form is a set of integers, return the results of those forms whoes index is
+in the set. Each index must be 0 <= index <= forms-count. If the set is empty,
+it's ignored.
 
 Else, return the result of all forms as a vector.
 
@@ -516,6 +537,21 @@ NOTE: The index values must be literal integers. They are evaluated at compile
      (throw (Exception. (str "The first argument to <g must be a vector of"
                              " two elements [start, end] where"
                              " 0 <= start < end holds, got: " form))))
+   (set? form)
+   (if (empty? form)
+     `(<g ~@forms)
+     (if-let [bad-indexes (seq (filter #(or (< % 0)
+                                            (>= % (count forms)))
+                                       form))]
+       (throw (RalikException. (str "<g index(s) out of range "
+                                    (seq bad-indexes))))
+       (if (= (count form) 1)
+         `(<g ~(first form) ~@forms)
+         (let [res (gensym)
+               [form2 & forms2] (collect-form-set form forms res)]
+           `(let [~res (atom [])]
+              (when (g ~form2 ~@forms2)
+                @~res))))))
    ;; one form given, dont put its result in a vector.
    (empty? forms) `(<g 0 ~form)
    ;; return the result of all forms as a vector
@@ -754,9 +790,13 @@ must be symbols."  [forms n m start end]
 ;; TODO: only literal integers allowed as selector indexes
 (defmacro <lex
   "Return the string matched by forms.
-If form in an integer return the string matched by the nth form. If form is
-the vector [n,m], return the string matched by the nth (inclusive) to
-mth (exclusive) forms. Else, return the string matched by all forms."
+
+If form in an integer return the string matched by the nth form.
+
+If form is the vector [start, end], return the string matched by the
+start (inclusive) to end (exclusive) forms.
+
+Else, return the string matched by all forms."
   [form & forms]
   (cond
    ;; 0, 1, 2, ...
@@ -775,7 +815,7 @@ mth (exclusive) forms. Else, return the string matched by all forms."
                 (subs *text-to-parse* @~start @~end))))))
      (throw (RalikException.
              (str "The first argument to <lex must be >= 0, got: " form))))
-   ;; [N, M]
+   ;; [start, end]
    (vector? form)
    (if (and (= (count form) 2)
             (<= 0 (form 0))
@@ -951,7 +991,7 @@ parentheses. eoi instead of (eoi)."
   (when-not (string? doc-str)
     (throw (RalikException.
             (str "defatomic requests a doc string on: " name))))
-  ;; nag-free redefinition
+  ;; nag-free redefinition atomic parsers
   (when (:atomic-parser (meta (resolve name)))
     (ns-unmap *ns* name))
   `(defn ~name ~doc-str {:atomic-parser true} [] ~@body))
@@ -976,12 +1016,6 @@ A skip is performed first. Return the character."
            (.charAt *text-to-parse* (dec *cur-pos*)))
       (adv-err-pos "unexpected end of input")))
 
-(defatomic eoi
-  "Return true if at the end of input. A skip is performed first."
-  (skip)
-  (or (= *cur-pos* *end-pos*)
-      (adv-err-pos "expected end of input")))
-
 (defatomic kw-terminator
   "Define the kw and kws parser's terminator condition.
 This should define characters that cannot immediately follow the last
@@ -989,69 +1023,6 @@ character of the keyword(s) given to kw or kws.
 
 The default is: (match #\"[a-zA-Z0-9_]\")"
   (match #"[a-zA-Z0-9_]"))
-
-(defatomic wsp
-  "Match a single whitespace character"
-  (or (match #"[ \n\t\r\f\v]")
-      (adv-err-pos "expected whitespace character")))
-
-(defatomic wsp+
-  "Match one or more whitespace characters"
-  (or (match #"[ \n\t\r\f\v]+")
-      (adv-err-pos "expected whitespace character")))
-
-(defatomic blank
-  "Match a single space or tab."
-  (or (match #"[ \t]")
-      (adv-err-pos "expected space or tab")))
-
-(defatomic blank+
-  "Match one or more spaces or tabs"
-  (or (match #"[ \t]+")
-      (adv-err-pos "expected space or tab")))
-
-(defatomic eol
-  "Match a single end of line terminator \r\n, \r, or \n
-or the end of input"
-  (or (g| eoi #"\r?\n|\r")
-      (adv-err-pos "expected end of line terminator or end of input")))
-
-(defatomic eol+
-  "Match a one or more end of line terminators \r\n, \r or \n,
-or the end or input."
-  (or (g| eoi #"(\r?\n|\r)+")
-      (adv-err-pos "expected end of line terminator or end of input")))
-
-(defatomic uint10
-  "Match an unsigned decimal integer. Return an integer."
-  (or (>lex #"\d+" Integer/parseInt)
-      (adv-err-pos "expected unsigned decimal integer")))
-
-(defatomic sint10
-  "Match a decimal integer with optional leading +/-.
-No space allowed in the token. Return an integer."
-  (or (>g #"[+-]?\d+"
-          #(if (= (first %) \+)
-             (Integer/parseInt (subs % 1))
-             (Integer/parseInt %)))
-      (adv-err-pos "expected optionally signed decimal integer")))
-
-(defatomic uint16
-  "Match an unsigned hexadecimal number with optional 0[xX] prefix.
-Return an integer."
-  (or (>g #"(0[xX])?[0-9a-fA-F]+"
-          #(if (some #{\x \X} %)
-             (Integer/parseInt (subs % 2) 16)
-             (Integer/parseInt % 16)))
-      (adv-err-pos "expected hexadecimal number")))
-
-(defatomic c-ident
-  "Match and return a C/C++ identifier as a string"
-  (<g #"[a-zA-Z_][a-zA-Z0-9_]*"))
-
-(defatomic c-comment
-  "Match a C comment, return success or failure"
-  (g "/*" (g* (g! "*/") <_) "*/"))
 
 ;; =======================================================================
 ;; 
