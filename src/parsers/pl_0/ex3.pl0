@@ -1,0 +1,20 @@
+CONST x=0;
+VAR y;
+PROCEDURE Proc1;
+  CONST x=1;
+  VAR y;
+  PROCEDURE Proc2;   (* Nested procedure *)
+    CONST x=2;
+    VAR y;
+    BEGIN
+      !x; y := x; !y
+    END;
+  BEGIN
+    !x; y := x; !y;
+    CALL Proc2
+  END;
+BEGIN
+!x; y := x; !y;
+CALL Proc1;
+END
+.

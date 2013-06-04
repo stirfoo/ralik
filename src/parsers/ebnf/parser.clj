@@ -2,11 +2,14 @@
 ;;;
 ;;; Thursday, May  23 2013
 
+;; TODO: incomplete
+
 (ns ^{:doc "Define an Extended BNF parser.
 Loosely based on ISO/IEC 14977.
 http://en.wikipedia.org/wiki/Extended_Backus%E2%80%93Naur_Form"}
   parsers.ebnf.parser
   (:use ralik.core)
+  (:use [ralik.atomics :only [eoi uint10]])
   (:use [clojure.pprint :only [pprint]])
   (:import [ralik RalikException]))
 
@@ -26,10 +29,9 @@ Return a vector of ralik rules."
    :trace? false
    :print-err? true
    :ppfn pprint]
-  (Syntax (<g 0 (<g+ 0 (SyntaxRule)) eoi))
-  (SyntaxRule (>g (MetaIdent) "=" (DefList) ";"
-                  #(let [[id _ dl _] %&]
-                     (list id dl))))
+  (Syntax (<g 0 (<g+ (SyntaxRule)) eoi))
+  (SyntaxRule (>g #{0 2} (MetaIdent) "=" (DefList) ";"
+                  #(list %1 %2)))
   (DefList (>g_ 0 (SingleDef) "|"
                 #(if (next %&)
                    (list* 'g| %&)
@@ -57,15 +59,19 @@ Return a vector of ralik rules."
                        (list 'rep {:h n} (cons 'g (next p)))
                        (list 'rep {:h n} (fnext p)))
                      (list 'rep n p))))))
-  (Primary (<g| (OptionalSeq) (RepetedSeq) (SpecialSeq) (GroupedSeq)
-                (>g (MetaIdent) list) (TerminalStr) (Empty)))
-  (Empty (g "" :empty))
+  (Primary (<g| (OptionalSeq)
+                (RepetedSeq)
+                (GroupedSeq)
+                (SpecialSeq)
+                (>g (MetaIdent) list)
+                (TerminalStr)
+                :empty))
   (OptionalSeq (>g 1 "[" (DefList) "]" #(list* 'g? %&)))
   (RepetedSeq (>g 1 "{" (DefList) "}" #(list* 'g* %&)))
   (GroupedSeq (<g 1 "(" (DefList) ")"))
-  (TerminalStr (g| (<g 1 "'" (<skip- 0 (<lex (g+ (g- <_ "'")))) "'")
-                   (<g 1 "\"" (<skip- 0 (<lex (g+ (g- <_ "\"")))) "\"")))
-  (MetaIdent (>lex #"[a-zA-Z][a-zA-Z0-9]*( ?[a-zA-Z0-9]+)*"
-                   #(symbol (.replace % " " "-"))))
   (SpecialSeq (>g 1 "?" (<lex (skip- (g* (g- <_ "?")))) "?"
-                  #(list 'special (.trim %)))))
+                  #(list 'special (.trim %))))  
+  (TerminalStr (g| (<g 1 "'" (<skip- (<lex (g+ (g- <_ "'")))) "'")
+                   (<g 1 "\"" (<skip- (<lex (g+ (g- <_ "\"")))) "\"")))
+  (MetaIdent (>lex #"[a-zA-Z][a-zA-Z0-9]*( ?[a-zA-Z0-9]+)*"
+                   #(symbol (.replace % " " "-")))))

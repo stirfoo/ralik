@@ -1,9 +1,15 @@
+(* Adapted from http://en.wikipedia.org/wiki/PL/0 *)
+
 VAR x, squ;
 
 PROCEDURE square;
 BEGIN
-    squ:= x * x
+    squ:= x * x    (* Comment *)
 END;
+
+(*
+Comment
+*)
      
 BEGIN
     x := 1;
@@ -14,3 +20,5 @@ BEGIN
 	x := x + 1
     END
 END.
+
+(* Comment *)

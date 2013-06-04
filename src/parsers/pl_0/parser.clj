@@ -12,29 +12,29 @@ http://en.wikipedia.org/wiki/PL/0"}
 
 ;; Symbols and Scope
 
-(defn pproc? [s] (= (:type s) :procedure))
-(defn pconst? [s] (= (:type s) :const))
-(defn pvar? [s] (= (:type s) :var))
+(defn pproc? [s] (= (:type s) :PROCEDURE))
+(defn pconst? [s] (= (:type s) :CONST))
+(defn pvar? [s] (= (:type s) :VAR))
 
 (defprotocol Foo
   (add-sym [this s])
   (resolve-sym [this s]))
 
-(defrecord Symbol [name pos type])
+(defrecord Symbol [name pos type scope])
 
-(deftype Scope [name ^{:volatile-mutable true} symbol-map parent]
+(defrecord Scope [name symbol-map parent]
   Foo
   (add-sym [this s]
     ;; (println "adding" (:name s) "to" name)
-    (set! symbol-map (assoc symbol-map (:name s) s)))
+    (swap! symbol-map assoc (:name s) (assoc s :scope name)))
   (resolve-sym [this s]
     ;; (println "resolving" {:name (:name s) :type (:type s)} "in" name)
-    (symbol-map (:name s))))
+    (@symbol-map (:name s))))
 
 (defn init-scope
   "Define the-scope as a Global scope with no defined symbols and no parent."
   []
-  (def the-scope (atom (Scope. "Global" {} nil))))
+  (def the-scope (atom (Scope. "Global" (atom {}) nil))))
 
 (defn lookup [s]
   "Resolve the Symbol s in the current scope. Return nil if not found."
@@ -47,7 +47,7 @@ http://en.wikipedia.org/wiki/PL/0"}
 (defn push-scope
   "Set the-scope to a new Scope with the-scope as its parent"
   [name]
-  (swap! the-scope #(Scope. name {} %)))
+  (swap! the-scope #(Scope. name (atom {}) %)))
 
 (defn pop-scope
   "Set the-scope to the-scope's parent"
@@ -66,7 +66,10 @@ http://en.wikipedia.org/wiki/PL/0"}
     (when (pproc? s)
       (parse-error (:pos s) (str "cannot redefine a " (name (:type dsym))
                                  " as a procedure")
-                   :tag "PL/0")))
+                   :tag "PL/0"))
+    (when (= (:scope dsym) (:name @the-scope))
+      (parse-error (:pos s) (str "cannot redefine a " (name (:type dsym))
+                                 " in the same scope") :tag "PL/0")))
   (.add-sym @the-scope s))
 
 (defn pl0-sym [s]
@@ -74,6 +77,7 @@ http://en.wikipedia.org/wiki/PL/0"}
   (symbol (str "pl0-" (:name s))))
 
 ;; Rule Handlers
+;; Code emitters with some compile-time type checking
 
 (defn on-const
   "Handle: CONST x=1, y=2;
@@ -82,7 +86,7 @@ will be '(let [x 1 y 2])"
   [& vars-vals]
   (list 'let
         (into [] (mapcat (fn [[x y]]
-                           (define-symbol (assoc x :type :constant))
+                           (define-symbol (assoc x :type :CONST))
                            [(pl0-sym x) y])
                          vars-vals))))
 
@@ -93,7 +97,7 @@ be '(with-local-vars [a nil b nil c nil])"
   [& var-syms]
   (list 'with-local-vars
         (into [] (interleave (map #(do
-                                     (define-symbol (assoc % :type :var))
+                                     (define-symbol (assoc % :type :VAR))
                                      (pl0-sym %))
                                   var-syms)
                              (repeat nil)))))
@@ -103,7 +107,7 @@ be '(with-local-vars [a nil b nil c nil])"
 In this case add Foo to the current scope as a procedure, push a new empty
 scope, and return s (The function name as a Symbol)"
   [s]
-  (define-symbol (assoc s :type :procedure))
+  (define-symbol (assoc s :type :PROCEDURE))
   (push-scope (:name s))
   s)
 
@@ -152,10 +156,10 @@ Ensure the symbol is a VAR or CONSTANT in scope and return:
   [s]
   (if-let [dsym (lookup s)]
     (case (:type dsym)
-      :procedure
+      :PROCEDURE
       (parse-error (:pos s) "cannot take the value of a procedure"
                    :tag "PL/0")
-      :var
+      :VAR
       ;; run time check
       ;; Can only be used with eval in :ppfn because it depends on dynamic
       ;; vars created by defgrammar. If the emitted code from pl-0 were
@@ -163,11 +167,11 @@ Ensure the symbol is a VAR or CONSTANT in scope and return:
       `(if-let [res# (var-get ~(pl0-sym s))]
          res#
          (parse-error ~(:pos s) "uninitialized VAR" :tag "PL/0"))
-      :constant
+      :CONST
       (pl0-sym s)
-      :undefined
+      :unknown
       (parse-error (:pos s)
-                   (str "internal error, " (:name s) " has type :undefined")
+                   (str "internal error, " (:name s) " has type :unknown")
                    :tag "PL/0"))
     (parse-error (:pos s) "unknown identifier" :tag "PL/0")))
 
@@ -300,4 +304,4 @@ Ensure the symbol is a VAR or CONSTANT in scope and return:
                    #(list %1 %2))))
   (Ident (>g #"[a-zA-Z][a-zA-Z0-9]*"
              #(when-not (reserved-word? %)
-                (Symbol. % (- *cur-pos* (count %)) :undefined)))))
+                (Symbol. % (- *cur-pos* (count %)) :unknown :unknown)))))
