@@ -1435,18 +1435,20 @@ Will throw if offset is not in the range [0, (count string)]."
 A utility to print the line of text that caused a parse error with a ^ on the
 next line pointing to the error position. m is the map returned from
 offset->line-number. Output is printed to the current value of *out*"
-  [m]
-  (let [spacing (apply str (repeat (:column m) " "))]
-    ;; the hint is crap
-    (printf "Parse Error line %d: %s\n" (:line m) (or (:hint m) ""))
-    (printf "%s\n%s^\n" (:text m) spacing)))
+  ([m] (spep m "Parse Error"))
+  ([m tag]
+     (let [spacing (apply str (repeat (:column m) " "))]
+       ;; the hint is crap
+       (printf "%s: line %d: %s\n" tag (:line m) (or (:hint m) ""))
+       (printf "%s\n%s^\n" (:text m) spacing))))
 
 (defn parse-error
   "Call from within a grammar.
 This will immediately exit the parser."
-  [pos msg]
+  [pos msg & {:keys [tag] :or {tag "Parse Error"}}]
   (spep (merge (offset->line-number pos *text-to-parse*)
-               {:hint msg}))
+               {:hint msg})
+        tag)
   (throw (ParserException.)))
 
 (defmacro tparse

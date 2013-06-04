@@ -32,10 +32,12 @@ http://en.wikipedia.org/wiki/PL/0"}
     (symbol-map (:name s))))
 
 (defn init-scope
+  "Define the-scope as a Global scope with no defined symbols and no parent."
   []
   (def the-scope (atom (Scope. "Global" {} nil))))
 
 (defn lookup [s]
+  "Resolve the Symbol s in the current scope. Return nil if not found."
   (loop [scope @the-scope]
     (when scope
       (if-let [dsym (resolve-sym scope s)]
@@ -43,31 +45,40 @@ http://en.wikipedia.org/wiki/PL/0"}
         (recur (.parent scope))))))
 
 (defn push-scope
+  "Set the-scope to a new Scope with the-scope as its parent"
   [name]
   (swap! the-scope #(Scope. name {} %)))
 
 (defn pop-scope
+  "Set the-scope to the-scope's parent"
   []
   (when (.parent @the-scope)
     (swap! the-scope #(.parent %)))
   true)
 
 (defn define-symbol
+  "Add the Symbol s to the current scope."
   [s]
   (when-let [dsym (lookup s)]
     (when (pproc? dsym)
-      (parse-error (:pos s) "PL/0: cannot redefine a procedure"))
+      (parse-error (:pos s) "cannot redefine a procedure"
+                   :tag "PL/0"))
     (when (pproc? s)
-      (parse-error (:pos s) "PL/0: cannot redefine a " (name (:type dsym))
-                   " as a procedure")))
+      (parse-error (:pos s) (str "cannot redefine a " (name (:type dsym))
+                                 " as a procedure")
+                   :tag "PL/0")))
   (.add-sym @the-scope s))
 
 (defn pl0-sym [s]
+  "Return a symbol with `pl-' prefix."
   (symbol (str "pl0-" (:name s))))
 
 ;; Rule Handlers
 
 (defn on-const
+  "Handle: CONST x=1, y=2;
+In this case vars-vals will be ([Symbol 1] [Symbol 2]) and the return value
+will be '(let [x 1 y 2])"
   [& vars-vals]
   (list 'let
         (into [] (mapcat (fn [[x y]]
@@ -76,70 +87,109 @@ http://en.wikipedia.org/wiki/PL/0"}
                          vars-vals))))
 
 (defn on-var
+  "Handle: VAR a, b, c;
+In this case var-syms will be (Symbol Symbol Symbol) and the return value will
+be '(with-local-vars [a nil b nil c nil])"
   [& var-syms]
   (list 'with-local-vars
         (into [] (interleave (map #(do
                                      (define-symbol (assoc % :type :var))
                                      (pl0-sym %))
                                   var-syms)
-                             (repeat 0)))))
+                             (repeat nil)))))
 
 (defn on-proc-def
+  "Handle: PROCEDURE Foo;
+In this case add Foo to the current scope as a procedure, push a new empty
+scope, and return s (The function name as a Symbol)"
   [s]
   (define-symbol (assoc s :type :procedure))
   (push-scope (:name s))
   s)
 
 (defn on-assign
+  "Handle: x := e
+Ensure x is defined VAR in scope and return '(var-set x e)"
   [s e]
   (if-let [dsym (lookup s)]
     (do
       (when-not (pvar? dsym)
-        (parse-error (:pos s) (str "PL/0: cannot assign to "
-                                   (name (:type dsym)))))
+        (parse-error (:pos s) (str "cannot assign to a " (name (:type dsym)))
+                     :tag "PL/0"))
       (list 'var-set (pl0-sym s) e))
-    (parse-error (:pos s) (str "PL/0: unknown identifier"))))
+    (parse-error (:pos s) "unknown identifier" :tag "PL/0")))
 
 (defn on-call
+  "Handle: CALL foo
+Ensure foo is a PROCEDURE in scope and return '(foo)"
   [s]
   (if-let [dsym (lookup s)]
     (do
       (when-not (pproc? dsym)
-        (parse-error (:pos s) (str "PL/0: not a procedure")))
+        (parse-error (:pos s) " not a procedure" :tag "PL/0"))
       (list (pl0-sym s)))
-    (parse-error (:pos s) (str "PL/0: unknown procedure"))))
+    (parse-error (:pos s) "unknown procedure" :tag "PL/0")))
 
 (defn on-?
+  "Handle: ?foo
+Ensure foo is a VAR in scope and return '(var-set foo op) where op is the read
+form."
   [op s]
   (if-let [dsym (lookup s)]
     (do
       (when-not (pvar? dsym)
-        (parse-error (:pos s) (str "PL/0: connot read into a "
-                                   (name (:type dsym)))))
+        (parse-error (:pos s) (str "connot read into a " (name (:type dsym)))
+                     :tag "PL/0"))
       (list 'var-set (pl0-sym s) op))
-    (parse-error (:pos s) (str "PL/0: unknown identifier"))))
+    (parse-error (:pos s) "unknown identifier" :tag "PL/0")))
 
 (defn on-factor-ident
+  "Handle a symbol in an expression
+Ensure the symbol is a VAR or CONSTANT in scope and return:
+1. a var-get form that checks at run time if the var has been initialized by
+   the PL/0 program.
+2. s if a CONSTANT" 
   [s]
   (if-let [dsym (lookup s)]
     (case (:type dsym)
       :procedure
-      (parse-error (:pos s) (str "PL/0: cannot take the value of a procedure"))
+      (parse-error (:pos s) "cannot take the value of a procedure"
+                   :tag "PL/0")
       :var
-      (list 'var-get (pl0-sym s))
+      ;; run time check
+      ;; Can only be used with eval in :ppfn because it depends on dynamic
+      ;; vars created by defgrammar. If the emitted code from pl-0 were
+      ;; written to a file then loaded, it would not run.
+      `(if-let [res# (var-get ~(pl0-sym s))]
+         res#
+         (parse-error ~(:pos s) "uninitialized VAR" :tag "PL/0"))
       :constant
       (pl0-sym s)
       :undefined
       (parse-error (:pos s)
-                   (str "PL/0: internal error, " (:name s)
-                        " has type :undefined")))
-    (parse-error (:pos s) (str "PL/0: unknown identifier"))))
+                   (str "internal error, " (:name s) " has type :undefined")
+                   :tag "PL/0"))
+    (parse-error (:pos s) "unknown identifier" :tag "PL/0")))
+
+;; Builtin PL/0 read fn: ?x
+
+(defn pl0-read-int
+  "Read and return an integer from *in*"
+  []
+  (loop [x (read-line)]
+    (if (re-find #"^[+-]?\d+$" x)
+      (if (= (first x) \+)
+        (Integer/parseInt (subs x 1))
+        (Integer/parseInt x))
+      (do
+        (println x "is not an integer,"
+                 " try again")
+        (recur (read-line))))))
 
 ;; Parser
 
 (def opmap {"=" '=, "#" 'not=, "<=" '<=, "<" '<, ">=" '>=, ">" '>, "+" '+,
-            "-" '-, "*" '*, "/" 'quot, "!" 'println,
-            "odd" 'odd?,"" :empty,
+            "-" '-, "*" '*, "/" 'quot, "!" 'println,"odd" 'odd?, "" :empty,
             "?" '(pl0-read-int)})
 
 (defn getop
@@ -181,21 +231,9 @@ http://en.wikipedia.org/wiki/PL/0"}
   (Block (>g (<g? (ConstExpr))
              (<g? (VarExpr))
              (>g* (ProcExpr)
-                  #(list 'letfn
-                         `[~@(cons
-                              ;; built-in for ?x
-                              '(pl0-read-int
-                                []
-                                (loop [x (read-line)]
-                                  (if (re-find #"^[+-]?\d+$" x)
-                                    (if (= (first x) \+)
-                                      (Integer/parseInt (subs x 1))
-                                      (Integer/parseInt x))
-                                    (do
-                                      (println x "is not an integer,"
-                                               " try again")
-                                      (recur (read-line))))))
-                              %&)]))
+                  #(if (empty? %&)
+                     :empty
+                     (list 'letfn `[~@%&])))
              (Statement)
              #(let [x (reverse %&)]
                 (reduce (fn [x y]
