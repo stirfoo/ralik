@@ -4,7 +4,7 @@ A parsing framework based on [Parsing Expression Grammars](http://en.wikipedia.o
 
 ## Usage
 
-See the [ralik wiki](http://github.com/ralik/wiki).
+See the [ralik wiki](http://github.com/stirfoo/ralik/wiki).
 
 ## License
 
