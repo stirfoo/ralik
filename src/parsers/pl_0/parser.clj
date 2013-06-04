@@ -61,20 +61,22 @@ Return nil if not found."
   "Add the Symbol s to the current scope."
   [s]
   (when-let [dsym (lookup s)]
-    (when (pproc? dsym)
-      (parse-error (:pos s) "cannot redefine a procedure"
-                   :tag "PL/0"))
-    (when (pproc? s)
-      (parse-error (:pos s) (str "cannot redefine a " (name (:type dsym))
-                                 " as a procedure")
-                   :tag "PL/0"))
-    (when (= (:scope dsym) (:name @the-scope))
-      (parse-error (:pos s) (str "cannot redefine a " (name (:type dsym))
-                                 " in the same scope") :tag "PL/0")))
-  (.add-sym @the-scope s))
+    (cond
+     (pproc? dsym)
+     (parse-error (:pos s) "cannot redefine a procedure"
+                  :tag "PL/0")
+     (pproc? s)
+     (parse-error (:pos s) (str "cannot redefine a " (name (:type dsym))
+                                " as a procedure")
+                  :tag "PL/0")
+     (= (:scope dsym) (:name @the-scope))
+     (parse-error (:pos s) (str "cannot redefine a " (name (:type dsym))
+                                " in the same scope")
+                  :tag "PL/0")))
+  (add-sym @the-scope s))
 
 (defn pl0-sym [s]
-  "Return a symbol with `pl-' prefix."
+  "Return a symbol with a `pl0-' prefix."
   (symbol (str "pl0-" (:name s))))
 
 ;; Rule Handlers
@@ -114,7 +116,7 @@ scope, and return s (The function name as a Symbol)"
 
 (defn on-assign
   "Handle: x := e
-Ensure x is defined VAR in scope and return '(var-set x e)"
+Ensure x is a defined VAR in scope and return '(var-set x e)"
   [s e]
   (if-let [dsym (lookup s)]
     (do
@@ -131,7 +133,7 @@ Ensure foo is a PROCEDURE in scope and return '(foo)"
   (if-let [dsym (lookup s)]
     (do
       (when-not (pproc? dsym)
-        (parse-error (:pos s) " not a procedure" :tag "PL/0"))
+        (parse-error (:pos s) "not a procedure" :tag "PL/0"))
       (list (pl0-sym s)))
     (parse-error (:pos s) "unknown procedure" :tag "PL/0")))
 
@@ -176,7 +178,7 @@ Ensure the symbol is a VAR or CONSTANT in scope and return:
                    :tag "PL/0"))
     (parse-error (:pos s) "unknown identifier" :tag "PL/0")))
 
-;; Builtin PL/0 read fn: ?x
+;; Builtin PL/0 read function for ?x
 
 (defn pl0-read-int
   "Read and return an integer from *in*"
@@ -253,10 +255,8 @@ Ensure the symbol is a VAR or CONSTANT in scope and return:
                  on-const))
   (VarExpr (>g 1 (kw :VAR) (<g_ 0 (Ident) ",") ";"
                on-var))
-  (ProcExpr (>g #{1 3} (kw :PROCEDURE)
-                (>g (Ident) on-proc-def)
-                ";" (Block) ";"
-                (pop-scope)
+  (ProcExpr (>g #{1 3} (kw :PROCEDURE) (>g (Ident) on-proc-def) ";"
+                (Block) ";" (pop-scope)
                 #(if (= %2 :empty)
                    (list (pl0-sym %1) [])
                    (list (pl0-sym %1) [] %2))))

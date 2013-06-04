@@ -483,6 +483,11 @@ be a (gensym). Return a list."
 
 ;; Parsers
 
+;; TODO: Allow negative integers for reverse indexing.
+;;       -1 would probably be the most useful.
+;;       (<g -1 \x \x \x \x \x \x "this")  => "this"
+;;       Could just add the negative index to the number of forms to get the
+;;       absolute index, then just recur on <g.
 (defmacro <g
   "Same as g but return the result of forms.
 
@@ -1047,6 +1052,7 @@ unbound."}
 the macro with-profile can modify it. Initially unbound."}
   *rule-profile-map*)
 
+;; TODO: Heuristic sloth column
 (defn print-profile-info
   "Print the contents of *rule-profile-map* to the current value of *out*"
   []
