@@ -37,7 +37,8 @@ http://en.wikipedia.org/wiki/PL/0"}
   (def the-scope (atom (Scope. "Global" (atom {}) nil))))
 
 (defn lookup [s]
-  "Resolve the Symbol s in the current scope. Return nil if not found."
+  "Resolve the Symbol s in the current or parent scopes.
+Return nil if not found."
   (loop [scope @the-scope]
     (when scope
       (if-let [dsym (resolve-sym scope s)]
@@ -77,7 +78,7 @@ http://en.wikipedia.org/wiki/PL/0"}
   (symbol (str "pl0-" (:name s))))
 
 ;; Rule Handlers
-;; Code emitters with some compile-time type checking
+;; Code emitters with some scope and type checking
 
 (defn on-const
   "Handle: CONST x=1, y=2;
@@ -181,13 +182,12 @@ Ensure the symbol is a VAR or CONSTANT in scope and return:
   "Read and return an integer from *in*"
   []
   (loop [x (read-line)]
-    (if (re-find #"^[+-]?\d+$" x)
+    (if (re-find #"^[+-]?\d+$" (.trim x))
       (if (= (first x) \+)
         (Integer/parseInt (subs x 1))
         (Integer/parseInt x))
       (do
-        (println x "is not an integer,"
-                 " try again")
+        (println x "is not an integer, try again")
         (recur (read-line))))))
 
 ;; Parser
