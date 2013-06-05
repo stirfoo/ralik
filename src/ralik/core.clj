@@ -117,7 +117,8 @@ Return the text/character matched on success else return nil or false"
 
 (defmethod match [java.util.regex.Pattern] [pat]
   (skip)
-  (if (< *cur-pos* *end-pos*)
+  ;; <= because a * or ? regexps can match at the end of the input string
+  (if (<= *cur-pos* *end-pos*)
     (let [m (re-matcher pat (subs *text-to-parse* *cur-pos*))]
       (if (.lookingAt m)
         (do (set! *cur-pos* (+ *cur-pos* (.end m)))

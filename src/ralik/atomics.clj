@@ -20,6 +20,10 @@
   (or (match #"[ \n\t\r\f\v]")
       (adv-err-pos "expected whitespace character")))
 
+(defatomic wsp*
+  "Match zero or more whitespace characters"
+  (match #"[ \n\t\r\f\v]*"))
+
 (defatomic wsp+
   "Match one or more whitespace characters"
   (or (match #"[ \n\t\r\f\v]+")
@@ -30,21 +34,27 @@
   (or (match #"[ \t]")
       (adv-err-pos "expected space or tab")))
 
+(defatomic blank*
+  "Match zero or more spaces or tabs"
+  (match #"[ \t]*"))
+
 (defatomic blank+
   "Match one or more spaces or tabs"
   (or (match #"[ \t]+")
       (adv-err-pos "expected space or tab")))
 
 (defatomic eol
-  "Match a single end of line terminator \r\n, \r, or \n
-or the end of input"
-  (or (g| eoi #"\r?\n|\r")
+  "Match a single end of line terminator \r\n, \r, or \n"
+  (or (match #"\r?\n|\r")
       (adv-err-pos "expected end of line terminator or end of input")))
 
+(defatomic eol*
+  "Match a zero or more line terminator \r\n, \r, or \n"
+  (match #"(\r?\n|\r)*"))
+
 (defatomic eol+
-  "Match a one or more end of line terminators \r\n, \r or \n,
-or the end or input."
-  (or (g| eoi #"(\r?\n|\r)+")
+  "Match one or more end of line terminators \r\n, \r or \n"
+  (or (match #"(\r?\n|\r)+")
       (adv-err-pos "expected end of line terminator or end of input")))
 
 (defatomic uint10
