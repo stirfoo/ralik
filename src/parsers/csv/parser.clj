@@ -73,8 +73,9 @@ strings."
                       (vec %&))))
   (Record (<g 0 (<g_ 0 (Field) \,) (g| eol+ eoi)))
   (Field (<g 1 (g! eoi) (<g| (LiteralStr)
-                             (<lex (<g* (<g- <_ (g| \,
-                                                    eol)))))))
+                             (<lex (g* (g- <_
+                                           (g| \,
+                                               eol)))))))
   (LiteralStr (<g 1 blank* (<lex \"
                                  (g* (g| (g \" \")
                                          (g- <_ \")))
