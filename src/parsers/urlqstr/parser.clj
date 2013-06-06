@@ -12,7 +12,7 @@ http://en.wikipedia.org/wiki/Query_string"}
 (defn find-illegal-char
   "Before parsing, check for illegal characters in the query string"
   []
-  (let [m (re-matcher #"[^a-zA-Z0-9.!_+=&%-]" *text-to-parse*)]
+  (let [m (re-matcher #"[^a-zA-Z0-9.~_+=&%-]" *text-to-parse*)]
     (when (.find m)
       (parse-error (.start m) "illegal character in query string"
                    :tag "urlqstr"))))
