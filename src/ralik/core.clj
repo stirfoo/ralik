@@ -1220,7 +1220,7 @@ If no key found, return nil."
 (defn- chk-grammar-args
   "Perform defgrammar argument checks"
   [name doc-string key-args rule rules start-rule]
-  (if-let [bad-key (find-bad-keyarg key-args [:skipper :start-rule
+  (if-let [bad-key (find-bad-keyarg key-args [:skipper :start-rule :init-fn
                                               :match-case? :print-err?
                                               :memoize? :trace? :inherit?
                                               :profile? :ppfn])]
@@ -1259,7 +1259,7 @@ If no key found, return nil."
 
 (defn- emit-grammar
   "defgrammar helper to emit a grammar as a function"
-  [name doc-string skipper start-rule match-case? print-err? memoize?
+  [name doc-string skipper start-rule init-fn match-case? print-err? memoize?
    trace? profile? ppfn rule rules]
   `(defn ~name
      ~doc-string
@@ -1284,6 +1284,8 @@ If no key found, return nil."
                                                    memoize?)
                            trace? profile?)
                      (conj rules rule))]
+           ~(when init-fn
+              `(~init-fn))
            (if-let [result# (~start-rule)]
              (do
                (when ~profile?
@@ -1304,6 +1306,9 @@ possibly empty vector of key val pairs:
 .--------------+-------------------------------------------------------------.
 |     key      |                          val                                |
 |--------------+-------------------------------------------------------------|
+| :init-fn     | A function that takes no arguments called just prior to     |
+|              | calling the first rule.                                     |
+|              | Default: nil                                                |
 | :skipper     | Must be a function of no arguments to eat characters        |
 |              | between tokens. It should always return a non-nil value.    |
 |              | To disable skipping use nil.                                |
@@ -1375,23 +1380,23 @@ Example:
   (infix-expr \"4*[2*a*(a+3)+6*(4-a)]+5*a**2\")  => true
   (infix-expr \"4*[2*a*(a[+3)+6*(4-a)]+5*a**2\") => indicate the stray ["
   [name doc-string
-   [& {:keys [skipper start-rule match-case? print-err? memoize? trace?
-	      inherit? profile? ppfn]
+   [& {:keys [init-fn skipper start-rule match-case? print-err? memoize?
+              trace? inherit? profile? ppfn]
        :as key-args
-       :or {skipper 'wsp-skipper, start-rule 'start, match-case? false,
-	    print-err? false, memoize? false, trace? false, inherit? false,
-            profile? false,ppfn identity}}]
+       :or {skipper 'wsp-skipper, start-rule 'start,
+            match-case? false,print-err? false, memoize? false, trace? false,
+            inherit? false, profile? false, ppfn identity}}]
    rule & rules]
   ;; some error handling
   (chk-grammar-args name doc-string key-args rule rules start-rule)
   ;; emit code
   (if inherit?
-    ;; match-case?, print-err?, profile?, memoize?, and ppfn are
+    ;; init-fn match-case?, print-err?, profile?, memoize?, and ppfn are
     ;; ignored for now...
     (emit-inherited-grammar name doc-string start-rule skipper trace? rule
                             rules)
-    (emit-grammar name doc-string skipper start-rule match-case? print-err?
-                  memoize? trace? profile? ppfn rule rules)))
+    (emit-grammar name doc-string skipper start-rule init-fn match-case?
+                  print-err? memoize? trace? profile? ppfn rule rules)))
 
 ;; =======================================================================
 ;; 
