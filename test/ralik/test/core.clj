@@ -1,6 +1,6 @@
 (ns ralik.test.core
   (:use ralik.core)
-  (:use [ralik.atomics :only [eoi uint10]])
+  (:use [ralik.atomics :only [uint10]])
   (:import [ralik RalikException])
   (:use [clojure.test]))
 

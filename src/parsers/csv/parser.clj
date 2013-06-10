@@ -6,7 +6,6 @@
 http://en.wikipedia.org/wiki/Comma-separated_values#Basic_rules_and_examples"}
   parsers.csv.parser
   (:use ralik.core)
-  (:use [ralik.atomics :only [eoi eol eol+ eol* blank*]])
   (:use [clojure.pprint :only [pprint]])
   (:import [ralik RalikException ParserException]))
 
@@ -61,9 +60,8 @@ strings."
    :trace? false
    :print-err? true
    :ppfn identity]
-  (Start (>g [1 3] eol* (<g? (FirstRecord))
-             (<g* (>g (Record)
-                      check-field-count))
+  (Start (>g [1 3] eol* (<g? (FirstRecord)) (<g* (>g (Record)
+                                                     check-field-count))
              #(if (= %1 :empty)
                 []
                 (vec (concat [%1] %2)))))

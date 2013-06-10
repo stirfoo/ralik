@@ -5,6 +5,7 @@
 (ns ^{:doc "Oberon-0 parser"}
   parsers.oberon-0.parser
   (:use ralik.core)
+  (:use [ralik.atomics :only [uint10]])
   (:use [clojure.pprint :only [pprint]])
   (:import [ralik RalikException ParserException]))
 

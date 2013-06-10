@@ -5,8 +5,7 @@
 (ns ^{:doc "Define a template grammar for experimentation."}
   parsers.foo.parser
   (:use ralik.core)
-  (:use [ralik.atomics :only [eoi]])
-  (:import [ralik RalikException ParserError]))
+  (:import [ralik RalikException ParserException]))
 
 (defgrammar foo
   "Grammar for experimentation.

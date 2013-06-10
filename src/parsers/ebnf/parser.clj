@@ -9,7 +9,7 @@ Loosely based on ISO/IEC 14977.
 http://en.wikipedia.org/wiki/Extended_Backus%E2%80%93Naur_Form"}
   parsers.ebnf.parser
   (:use ralik.core)
-  (:use [ralik.atomics :only [eoi uint10]])
+  (:use [ralik.atomics :only [uint10]])
   (:use [clojure.pprint :only [pprint]])
   (:import [ralik RalikException]))
 

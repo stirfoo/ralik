@@ -6,7 +6,6 @@
 http://en.wikipedia.org/wiki/Query_string"}
   parsers.urlqstr.parser
   (:use ralik.core)
-  (:use [ralik.atomics :only [eoi]])
   (:import [ralik RalikException ParserException]))
 
 (defn find-illegal-char

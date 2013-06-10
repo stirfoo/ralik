@@ -1,0 +1,15 @@
+# sqlite.peg
+# Saturday, June  8 2013
+
+ColumnConstraint <-
+  'constraint' Name
+  ('primary' 'key' ('asc' 'desc')? ConflictClause 'autoincrement'? /
+   'not' 'null' ConflictClause /
+   'uniquie' ConflictClause /
+   'check' '(' Expr ')' /
+   'default' (SignedNumber /
+              LiteralValue /
+	      '(' Expr ')') /
+   'collate' CollationName /
+   ForeignKeyClause)
+    

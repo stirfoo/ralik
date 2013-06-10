@@ -6,7 +6,7 @@
 http://en.wikipedia.org/wiki/Bencode"}
   parsers.bencode.parser
   (:use ralik.core)
-  (:use [ralik.atomics :only [eoi uint10]])
+  (:use [ralik.atomics :only [uint10]])
   (:import [ralik RalikException]))
 
 (defgrammar bencode

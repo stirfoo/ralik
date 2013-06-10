@@ -6,57 +6,6 @@
   ralik.atomics
   (:use ralik.core))
 
-;; Moved the majority of them here to keep from cluttering up the core
-;; namespace.
-
-(defatomic eoi
-  "Return true if at the end of input. A skip is performed first."
-  (skip)
-  (or (= *cur-pos* *end-pos*)
-      (adv-err-pos "expected end of input")))
-
-(defatomic wsp
-  "Match a single whitespace character"
-  (or (match #"[ \n\t\r\f\v]")
-      (adv-err-pos "expected whitespace character")))
-
-(defatomic wsp*
-  "Match zero or more whitespace characters"
-  (match #"[ \n\t\r\f\v]*"))
-
-(defatomic wsp+
-  "Match one or more whitespace characters"
-  (or (match #"[ \n\t\r\f\v]+")
-      (adv-err-pos "expected whitespace character")))
-
-(defatomic blank
-  "Match a single space or tab."
-  (or (match #"[ \t]")
-      (adv-err-pos "expected space or tab")))
-
-(defatomic blank*
-  "Match zero or more spaces or tabs"
-  (match #"[ \t]*"))
-
-(defatomic blank+
-  "Match one or more spaces or tabs"
-  (or (match #"[ \t]+")
-      (adv-err-pos "expected space or tab")))
-
-(defatomic eol
-  "Match a single end of line terminator \r\n, \r, or \n"
-  (or (match #"\r?\n|\r")
-      (adv-err-pos "expected end of line terminator or end of input")))
-
-(defatomic eol*
-  "Match a zero or more line terminator \r\n, \r, or \n"
-  (match #"(\r?\n|\r)*"))
-
-(defatomic eol+
-  "Match one or more end of line terminators \r\n, \r or \n"
-  (or (match #"(\r?\n|\r)+")
-      (adv-err-pos "expected end of line terminator or end of input")))
-
 (defatomic uint10
   "Match an unsigned decimal integer. Return an integer."
   (or (>lex #"\d+" Integer/parseInt)

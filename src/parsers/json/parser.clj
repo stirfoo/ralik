@@ -14,7 +14,6 @@ Example usage
   [1 2 3]"}
   parsers.json.parser
   (:use ralik.core)
-  (:use [ralik.atomics :only [eoi]])
   (:use [clojure.walk :only [postwalk-replace]])
   (:import [ralik RalikException]))
 

@@ -5,6 +5,7 @@
 (ns ^{:doc "Define an infix calculator."}
   parsers.calc.parser
   (:use ralik.core)
+  (:use [ralik.atomics :only [c-ident]])
   (:use [clojure.pprint :only [pprint]])
   (:import [ralik RalikException]))
 
@@ -55,8 +56,8 @@ Example:
                   expr
                   (list 'let (vec (apply concat decls))
                         expr)))))
-  (Decl (>g [0 3] (Variable) "=" (SumExpr) ";"
-            #(vector %1 %3)))
+  (Decl (>g #{0 2} (Variable) "=" (SumExpr) ";"
+            #(vector %1 %2)))
   (SumExpr (>g_ (MulExpr) #"[+-]"
                 #(reduce (fn [x [op y]]
                            (list (symbol op) x y))
@@ -77,19 +78,19 @@ Example:
   (Thunk (<g 0 (>kw :random
                     #(list (symbol (str "Math/" %))))
              "(" ")"))
-  (UnaryFn (>g [0 3] (>kws :abs :acos :asin :atan :ceil :cosh :cos :exp :floor
-                           :log :log10 :round :sin :sinh :sqrt :tan :tanh :rad
-                           :deg
-                           #(case %
-                              "rad" 'Math/toRadians
-                              "deg" 'Math/toDegrees
-                              (symbol (str "Math/" %))))
+  (UnaryFn (>g #{0 2} (>kws :abs :acos :asin :atan :ceil :cosh :cos :exp
+                            :floor :log :log10 :round :sin :sinh :sqrt :tan
+                            :tanh :rad :deg
+                            #(case %
+                               "rad" 'Math/toRadians
+                               "deg" 'Math/toDegrees
+                               (symbol (str "Math/" %))))
                "(" (SumExpr) ")"
-               #(list %1 %3)))
-  (BinaryFn (>g [0 5] (>kws :atan2 :pow :max :min :hypot
-                            #(symbol (str "Math/" %)))
+               #(list %1 %2)))
+  (BinaryFn (>g #{0 2 4} (>kws :atan2 :pow :max :min :hypot
+                               #(symbol (str "Math/" %)))
                 "(" (SumExpr) "," (SumExpr) ")"
-                #(list %1 %3 %5)))
+                #(list %1 %2 %3)))
   (Func (<g| (Thunk)
              (UnaryFn)
              (BinaryFn)))

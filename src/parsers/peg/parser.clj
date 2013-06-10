@@ -8,7 +8,6 @@ A Recognition-Based Syntactic Foundation"}
     parsers.peg.parser
     (:use ralik.core)
     (:import [ralik RalikException])
-    (:use [ralik.atomics :only [eoi]])
     (:use [clojure.pprint :only [pprint]]))
 
 (defgrammar peg

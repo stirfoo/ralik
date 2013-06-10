@@ -1030,6 +1030,54 @@ character of the keyword(s) given to kw or kws.
 The default is: (match #\"[a-zA-Z0-9_]\")"
   (match #"[a-zA-Z0-9_]"))
 
+(defatomic eoi
+  "Return true if at the end of input. A skip is performed first."
+  (skip)
+  (or (= *cur-pos* *end-pos*)
+      (adv-err-pos "expected end of input")))
+
+(defatomic wsp
+  "Match a single whitespace character"
+  (or (match #"[ \n\t\r\f\v]")
+      (adv-err-pos "expected whitespace character")))
+
+(defatomic wsp*
+  "Match zero or more whitespace characters"
+  (match #"[ \n\t\r\f\v]*"))
+
+(defatomic wsp+
+  "Match one or more whitespace characters"
+  (or (match #"[ \n\t\r\f\v]+")
+      (adv-err-pos "expected whitespace character")))
+
+(defatomic blank
+  "Match a single space or tab."
+  (or (match #"[ \t]")
+      (adv-err-pos "expected space or tab")))
+
+(defatomic blank*
+  "Match zero or more spaces or tabs"
+  (match #"[ \t]*"))
+
+(defatomic blank+
+  "Match one or more spaces or tabs"
+  (or (match #"[ \t]+")
+      (adv-err-pos "expected space or tab")))
+
+(defatomic eol
+  "Match a single end of line terminator \r\n, \r, or \n"
+  (or (match #"\r?\n|\r")
+      (adv-err-pos "expected end of line terminator or end of input")))
+
+(defatomic eol*
+  "Match a zero or more line terminator \r\n, \r, or \n"
+  (match #"(\r?\n|\r)*"))
+
+(defatomic eol+
+  "Match one or more end of line terminators \r\n, \r or \n"
+  (or (match #"(\r?\n|\r)+")
+      (adv-err-pos "expected end of line terminator or end of input")))
+
 ;; =======================================================================
 ;; 
 ;;                          Grammar Creation
@@ -1293,7 +1341,7 @@ If no key found, return nil."
                (~ppfn result#))
              (when ~print-err?
                (spep (assoc (offset->line-number *err-pos* *text-to-parse*)
-                       :hint *err-msg*))))))
+                       :msg *err-msg*))))))
        (catch ParserException e#))))
 
 ;; TODO: Allow start-rule selection at run time.
@@ -1446,25 +1494,47 @@ Will throw if offset is not in the range [0, (count string)]."
   "Simple Parse Error Printer.
 A utility to print the line of text that caused a parse error with a ^ on the
 next line pointing to the error position. m is the map returned from
-offset->line-number. Output is printed to the current value of *out*"
-  ([m] (spep m "Parse Error"))
-  ([m tag]
-     (let [spacing (apply str (repeat (:column m) " "))]
-       ;; the hint is crap
-       (printf "%s: line %d: %s\n" tag (:line m) (or (:hint m) ""))
-       (printf "%s\n%s^\n" (:text m) spacing))))
+offset->line-number. By default it will contain the keys :line and :column.
+These two are required. Other accepted keys that can be merged with m are
+:tag, :msg, and :omit-all?.
+
+Example output:
+
+     .-------------------------- :tag = \"Parse Error\"
+     |                     .---- :msg = \"expected `foo'\"
+     |                     |
+     v                     v
+Parse Error: line 1: expected `foo'
+bar
+^
+
+Default values for these are:
+:tag \"Parse Error\"
+:msg \"\"
+
+The complete first line can be omitted with the key :omit-all?. In this case
+:tag, and :msg will be ignored and just the erroneous line will be printed:
+bar
+^"
+  [m]
+  (let [spacing (apply str (repeat (:column m) " "))]
+    (when-not (m :omit-all?)
+      (printf "%s: line %d: %s\n"
+              (get m :tag "Parse Error")
+              (:line m)
+              (get m :msg "")))
+    (printf "%s\n%s^\n" (:text m) spacing)))
 
 (defn parse-error
   "Call from within a grammar.
 This will immediately exit the parser."
-  [pos msg & {:keys [tag] :or {tag "Parse Error"}}]
+  [pos msg & {:keys [tag]}]
   (spep (merge (offset->line-number pos *text-to-parse*)
-               {:hint msg})
-        tag)
+               {:tag tag :msg msg}))
   (throw (ParserException.)))
 
 (defmacro tparse
-  "Test parser. Parse text with the single parsing form.
+  "repl test utility. Parse text with the single parsing form.
 The following key args may be given:
 :skip?
   true to skip all whitespace
@@ -1475,9 +1545,20 @@ The following key args may be given:
 :match-case?
   true if literal strings and characters are to match case sensitively
   default: false
+:show-pos?
+  true to indicate the current parse position after returning. This will
+  happen on success or failure.
+
+NOTE: print-err? and show-pos? are mutually exclusive
+
 Return non-nil on successful parse."
-  [text form & {:keys [skip? print-err? match-case?]
-                :or {skip? true print-err? true match-case? false}}]
+  [text form & {:keys [skip? print-err? match-case? show-pos?]
+                :or {skip? true, print-err? true, match-case? false,
+                     show-pos? false}}]
+  (when (and print-err? show-pos?)
+    (throw (RalikException.
+            (str ":print-err? and :show-pos? are mutually exclusive."
+                 "\nSet one or neither to true"))))
   `(binding [*cur-pos* 0
              *text-to-parse* ~text
              *end-pos* ~(count text)
@@ -1488,14 +1569,31 @@ Return non-nil on successful parse."
              *char=* ~(if match-case?
                         'char-case=
                         'char=)]
-     (if-let [result# ~form]
-       result#
-       ~(when print-err?
-          '(spep (merge (offset->line-number *err-pos* *text-to-parse*)
-                        {:hint *err-msg*}))))))
+     (let [result# ~form]
+       (cond
+        (and (not result#) ~print-err?)
+        (do
+          (spep (merge (offset->line-number *err-pos* *text-to-parse*)
+                       {:msg *err-msg*}))
+          result#)
+        ~show-pos?
+        (do
+          (spep (merge (offset->line-number *cur-pos* *text-to-parse*)
+                       {:omit-all? true}))
+          (boolean result#))
+        :else
+        result#))))
 
 (defmacro tparse2
   "For use with clojure.test
+Unlike tparse, this macro will accept one or more forms.
 Does not print a parse error message."
   [text form & forms]
   `(tparse ~text ~(list* '<g form forms) :print-err? false))
+
+(defmacro tparse3
+  "repl test utility for checking backtracking
+On success or failure, show the current parse position.
+Return only the two values true or false."
+  [text form]
+  `(tparse ~text ~form :print-err? false :show-pos? true))

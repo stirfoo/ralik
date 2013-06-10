@@ -65,7 +65,7 @@ terminals are not separate rules. It parses in about half the time."}
                 (<g 1 "(" (Expression) ")")
                 (Literal)
                 (Class)
-                (>g "." (constantly '_))))
+                (>g "." (constantly '<_))))
   
   ;; Lexical syntax
   (Identifier (>g #"[a-zA-Z_][a-zA-Z0-9_]*" symbol))
@@ -94,9 +94,9 @@ terminals are not separate rules. It parses in about half the time."}
         (>g 1 "\\" #"[0-7][0-7]?" #(format "\\u%04x"
                                            (Integer/parseInt % 8)))
         (>g 1 (g! "\\") <_ #(if (= % \")
-                             ;;  for ["] 
-                             "\\\""
-                             (str %))))))
+                              ;;  for ["] 
+                              "\\\""
+                              (str %))))))
 
 (defn peg->ralik
   "Read and parse in-file, a PEG, then write a ralik grammar to out-file.
