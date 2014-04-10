@@ -18,21 +18,21 @@ http://www.sqlite.org/hlr40000.html"}
 
 ;; O_o
 (def reserved-word?
-  #{"abort" "add" "after" "all" "alter" "analyze" "and" "as" "asc" "attach"
-    "autoincrement" "before" "begin" "between" "by" "cascade" "case" "cast"
-    "check" "collate" "column" "commit" "conflict" "constraint" "create"
-    "cross" "current_date" "current_time" "current_timestamp" "database"
-    "default" "deferred" "deferrable" "delete" "desc" "detach" "distinct"
-    "drop" "end" "each" "else" "escape" "except" "exclusive" "exists"
-    "explain" "fail" "for" "foreign" "from" "full" "glob" "group" "having"
-    "if" "ignore" "immediate" "in" "index" "initially" "inner" "insert"
-    "instead" "intersect" "into" "is" "isnull" "join" "key" "left" "like"
-    "limit" "match" "natural" "not" "notnull" "null" "of" "offset" "on" "or"
-    "order" "outer" "plan" "pragma" "primary" "query" "raise" "references"
-    "regexp" "reindex" "rename" "replace" "restrict" "right" "rollback"
-    "row" "select" "set" "table" "temp" "temporary" "then" "to" "transaction"
-    "trigger" "union" "unique" "update" "using" "vacuum" "values" "view"
-    "virtual" "when" "where"})
+  #{"abort" "action ""add" "after" "all" "alter" "analyze" "and" "as" "asc"
+    "attach" "autoincrement" "before" "begin" "between" "by" "cascade" "case"
+    "cast" "check" "collate" "column" "commit" "conflict" "constraint"
+    "create" "cross" "current_date" "current_time" "current_timestamp"
+    "database" "default" "deferred" "deferrable" "delete" "desc" "detach"
+    "distinct" "drop" "end" "each" "else" "escape" "except" "exclusive"
+    "exists" "explain" "fail" "for" "foreign" "from" "full" "glob" "group"
+    "having" "if" "ignore" "immediate" "in" "index" "indexed ""initially"
+    "inner" "insert" "instead" "intersect" "into" "is" "isnull" "join" "key"
+    "left" "like" "limit" "match" "natural" "no" "not" "notnull" "null" "of"
+    "offset" "on" "or" "order" "outer" "plan" "pragma" "primary" "query"
+    "raise" "references" "regexp" "reindex" "release" "rename" "replace"
+    "restrict" "right" "rollback" "row" "savepoint" "select" "set" "table"
+    "temp" "temporary" "then" "to" "transaction" "trigger" "union" "unique"
+    "update" "using" "vacuum" "values" "view" "virtual" "when" "where"})
 
 (defatomic kw-teminator
   ""
@@ -51,7 +51,7 @@ Parse error if \u0000 is read. (will Java even read 0x0?)"
    :skipper nil
    :inherit? true
    :print-err? true]
-  (Skip (g* (g| #"[ \n\t\r\v\f]+"
+  (Skip (g* (g| wsp+
                 (g "--"
                    (g* (g- <_
                            (g| eol
@@ -72,37 +72,36 @@ Parse error if \u0000 is read. (will Java even read 0x0?)"
    :trace? false
    :profile? false
    :print-err? true]
-  ;; (Start (<g 0 (Expr) eoi))
   (Start (g (g? (StmtList)) (g? ";") eoi))
   ;; TODO: H41920
   ;; H42000
   (StmtList (g_ (Stmt) ";"))
   ;; H42100
-  (Stmt (g (g? :explain (g? (kw :query) (kw :plan)))
-           (g| (AlterTableStmt)
+  (Stmt (g (g? (kw :explain) (g? (kw :query) (kw :plan)))
+           (g| (SelectStmt)
+               (InsertStmt)
+               (DeleteStmt)
+               (CommitStmt)
+               (CreateTableStmt)
+               (BeginStmt)
+               (AlterTableStmt)               
                (AnalyzeStmt)
                (AttachStmt)
-               (BeginStmt)
-               (CommitStmt)
                (CreateIndexStmt)
-               (CreateTableStmt)
                (CreateTriggerStmt)
                (CreateViewStmt)
                (CreateVirtualTableStmt)
-               (DeleteStmt)
                (DeleteStmtLimited)
                (DetachStmt)
                (DropIndexStmt)
                (DropTableStmt)
                (DropTriggerStmt)
                (DropViewStmt)
-               (InsertStmt)
                (PragmaStmt)
                (ReindexStmt)
                (ReleaseStmt)
                (RollbackStmt)
                (SavePointStmt)
-               (SelectStmt)
                (UpdateStmt)
                (UpdateStmtLimited)
                (VacuumStmt))))
@@ -121,7 +120,7 @@ Parse error if \u0000 is read. (will Java even read 0x0?)"
   (BeginStmt (g (kw :begin) (g? (kws :deferred :immediate :exclusive))
                 (g? (kw :transaction))))
   ;; H42600
-  (CommitStmt (g (kws :commit :end) (g? :transaction)))
+  (CommitStmt (g (kws :commit :end) (g? (kw :transaction))))
   ;; H42700
   (RollbackStmt (g (kw :rollback) (g? (kw :transaction))
                    (g? (kw :to) (g? (kw :savepoint)) (SavePointName))))
@@ -423,6 +422,12 @@ Parse error if \u0000 is read. (will Java even read 0x0?)"
   (ModuleName (Ident))
   (ModuleArgument
    )
+  (FunctionName (Ident))
+  (ErrorMessage (StringLiteral))
+  ;; C identifier only?
+  (PragmaName (g #"[a-zA-Z_][a-zA-Z0-9_]*"))
+  (ColumnAlias (Ident))
+  (TableAlias (Ident))
   (UnaryOperator (g| "+" "-" "~" (kw :not)))
   ;; all operators on the same line have the same preprecedence
   ;; highest to lowest
@@ -440,11 +445,6 @@ Parse error if \u0000 is read. (will Java even read 0x0?)"
                      (g #"[@:]" (skip- (Ident)))
                      (g "$" (skip- (Ident :allow-double-colon))
                         (g? "(" (skip- (g* (g- <_ ")"))) ")"))))
-  (FunctionName (Ident))
-  (ErrorMessage (StringLiteral))
-  (PragmaName (Ident))
-  (ColumnAlias (Ident))
-  (TableAlias (Ident))
   (NumericLiteral (>g #"(((\d+(\.\d*)?)|(\.\d+)))([eE][+-]?\d+)?"
                       #(if (some #{\. \e \E} %)
                          (Double/parseDouble %)
@@ -468,9 +468,11 @@ Parse error if \u0000 is read. (will Java even read 0x0?)"
   ;; `foo `` bar`
   (Ident
    [& allow-double-colon]
-   (>g| (if (seq allow-double-colon)
+   (<g| (if (seq allow-double-colon)
           (g #"([a-zA-Z]|::)([a-zA-Z0-9$]|::)*")
-          (g #"[a-zA-Z][a-zA-Z0-9$]*"))
+          (>g #"[a-zA-Z][a-zA-Z0-9$]*"
+              #(when-not (reserved-word? (.toLowerCase %))
+                 %)))
         (<lex (g| (g "["
                      (g* (g- <_
                              (g| "]"
@@ -485,6 +487,5 @@ Parse error if \u0000 is read. (will Java even read 0x0?)"
                      (g* (g| (g \" \")
                              (>g \u0000 bad-char)
                              (g- <_ \")))
-                     "`")))
-        #(when-not (reserved-word? (.toLowerCase %))
-           %))))
+                     "`"))))))
+

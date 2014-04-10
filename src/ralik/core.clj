@@ -84,47 +84,90 @@ Called from the match method."
 (def ^{:doc "Function to compare two characters for equality, using case."}
   char-case= =)
 
-(defmulti match
-  "Match x against *text-to-parse* at *cur-pos*.
-Return the text/character matched on success else return nil or false"
-  (fn [x] [(type x)]))
+(defprotocol Matchable
+  (match [x] "Match x against *text-to-parse* at *cur-pos*.
+Return the text/character matched on success else return nil or false"))
 
-(defmethod match [java.lang.Character] [c]
-  (skip)
-  (if (< *cur-pos* *end-pos*)
-    (let [result (.charAt *text-to-parse* *cur-pos*)]
-      (or (and (*char=* result c)
-               (set! *cur-pos* (inc *cur-pos*))
-               result)
-          (adv-err-pos (str "expected character `" c "'"))))
-    (adv-err-pos (str "expected character `" c "' at end of input"))))
+(extend-protocol Matchable
+  java.lang.Character
+  (match [c]
+    (skip)
+    (if (< *cur-pos* *end-pos*)
+      (let [result (.charAt *text-to-parse* *cur-pos*)]
+        (or (and (*char=* result c)
+                 (set! *cur-pos* (inc *cur-pos*))
+                 result)
+            (adv-err-pos (str "expected character `" c "'"))))
+      (adv-err-pos (str "expected character `" c "' at end of input"))))
+  java.lang.String
+  (match [s]
+    (skip)
+    (loop [sseq (seq s)
+           ttpseq (seq (subs *text-to-parse* *cur-pos*))
+           pos *cur-pos*
+           result ""]
+      (if sseq
+        (if ttpseq
+          (let [c (first ttpseq)]
+            (if (*char=* (first sseq) c)
+              (recur (next sseq) (next ttpseq) (inc pos) (str result c))
+              (adv-err-pos (str "expected `" s "'"))))
+          (adv-err-pos (str "expected `" s "' at end of input") *end-pos*))
+        (do (set! *cur-pos* pos)
+            result))))
+  java.util.regex.Pattern
+  (match [pat]
+    (skip)
+    ;; <= because a * or ? regexps can match at the end of the input string
+    (if (<= *cur-pos* *end-pos*)
+      (let [m (re-matcher pat (subs *text-to-parse* *cur-pos*))]
+        (if (.lookingAt m)
+          (do (set! *cur-pos* (+ *cur-pos* (.end m)))
+              (.group m))
+          (adv-err-pos (str "expected regepx match `" pat "'"))))
+      (adv-err-pos (str "expected regexp match `" pat "' at end of input")))))
 
-(defmethod match [java.lang.String] [s]
-  (skip)
-  (loop [sseq (seq s)
-         ttpseq (seq (subs *text-to-parse* *cur-pos*))
-         pos *cur-pos*
-         result ""]
-    (if sseq
-      (if ttpseq
-        (let [c (first ttpseq)]
-          (if (*char=* (first sseq) c)
-            (recur (next sseq) (next ttpseq) (inc pos) (str result c))
-            (adv-err-pos (str "expected `" s "'"))))
-        (adv-err-pos (str "expected `" s "' at end of input") *end-pos*))
-      (do (set! *cur-pos* pos)
-          result))))
+;; (defmulti match
+;;   "Match x against *text-to-parse* at *cur-pos*.
+;; Return the text/character matched on success else return nil or false"
+;;   (fn [x] [(type x)]))
 
-(defmethod match [java.util.regex.Pattern] [pat]
-  (skip)
-  ;; <= because a * or ? regexps can match at the end of the input string
-  (if (<= *cur-pos* *end-pos*)
-    (let [m (re-matcher pat (subs *text-to-parse* *cur-pos*))]
-      (if (.lookingAt m)
-        (do (set! *cur-pos* (+ *cur-pos* (.end m)))
-            (.group m))
-        (adv-err-pos (str "expected regepx match `" pat "'"))))
-    (adv-err-pos (str "expected regexp match `" pat "' at end of input"))))
+;; (defmethod match [java.lang.Character] [c]
+;;   (skip)
+;;   (if (< *cur-pos* *end-pos*)
+;;     (let [result (.charAt *text-to-parse* *cur-pos*)]
+;;       (or (and (*char=* result c)
+;;                (set! *cur-pos* (inc *cur-pos*))
+;;                result)
+;;           (adv-err-pos (str "expected character `" c "'"))))
+;;     (adv-err-pos (str "expected character `" c "' at end of input"))))
+
+;; (defmethod match [java.lang.String] [s]
+;;   (skip)
+;;   (loop [sseq (seq s)
+;;          ttpseq (seq (subs *text-to-parse* *cur-pos*))
+;;          pos *cur-pos*
+;;          result ""]
+;;     (if sseq
+;;       (if ttpseq
+;;         (let [c (first ttpseq)]
+;;           (if (*char=* (first sseq) c)
+;;             (recur (next sseq) (next ttpseq) (inc pos) (str result c))
+;;             (adv-err-pos (str "expected `" s "'"))))
+;;         (adv-err-pos (str "expected `" s "' at end of input") *end-pos*))
+;;       (do (set! *cur-pos* pos)
+;;           result))))
+
+;; (defmethod match [java.util.regex.Pattern] [pat]
+;;   (skip)
+;;   ;; <= because a * or ? regexps can match at the end of the input string
+;;   (if (<= *cur-pos* *end-pos*)
+;;     (let [m (re-matcher pat (subs *text-to-parse* *cur-pos*))]
+;;       (if (.lookingAt m)
+;;         (do (set! *cur-pos* (+ *cur-pos* (.end m)))
+;;             (.group m))
+;;         (adv-err-pos (str "expected regepx match `" pat "'"))))
+;;     (adv-err-pos (str "expected regexp match `" pat "' at end of input"))))
 
 ;; ----------------
 ;; Form Translation

@@ -1,4 +1,5 @@
 *~
+.nrepl-port
 /pom.xml
 *jar
 /lib
